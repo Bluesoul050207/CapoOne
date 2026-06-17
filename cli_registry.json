@@ -1,0 +1,113 @@
+{
+  "music": {
+    "netease": {
+      "name": "网易云音乐",
+      "binary": "ncm-cli",
+      "install": "npm install -g @music163/ncm-cli",
+      "requires": "node >= 18",
+      "commands": {
+        "search": {
+          "cmd": "ncm-cli search song --keyword \"{query}\"",
+          "desc": "搜索歌曲，返回 encryptedId 和 originalId"
+        },
+        "play": {
+          "cmd": "cmd /c start \"\" \"https://music.163.com/song?id={originalId}\"",
+          "desc": "打开网页歌曲页面，Chrome自动唤起桌面端播放"
+        },
+        "queue_list": {
+          "cmd": "ncm-cli queue",
+          "desc": "查看播放队列"
+        },
+        "stop": {
+          "cmd": "ncm-cli stop",
+          "desc": "停止播放"
+        },
+        "state": {
+          "cmd": "ncm-cli state",
+          "desc": "查看播放状态"
+        },
+        "play_playlist": {
+          "cmd": "start \"\" \"orpheus://playlist/{playlistId}\"",
+          "desc": "用网易云桌面端打开歌单"
+        },
+        "pause": {
+          "cmd": "ncm-cli pause",
+          "desc": "暂停/继续"
+        },
+        "next": {
+          "cmd": "ncm-cli next",
+          "desc": "下一首"
+        },
+        "prev": {
+          "cmd": "ncm-cli prev",
+          "desc": "上一首"
+        },
+        "like": {
+          "cmd": "ncm-cli like",
+          "desc": "收藏当前歌曲"
+        },
+        "daily": {
+          "cmd": "ncm-cli daily",
+          "desc": "每日推荐"
+        },
+        "volume": {
+          "cmd": "ncm-cli volume {level}",
+          "desc": "音量 0-100"
+        }
+      }
+    },
+    "local": {
+      "name": "本地播放器",
+      "binary": "mpv",
+      "install": "winget install mpv",
+      "commands": {
+        "play_file": {
+          "cmd": "mpv \"{path}\"",
+          "desc": "播放本地文件"
+        },
+        "play_url": {
+          "cmd": "mpv \"{url}\"",
+          "desc": "播放在线链接"
+        },
+        "pause": {
+          "cmd": "echo '{ \"command\": [\"cycle\", \"pause\"] }' | socat - /tmp/mpv-socket",
+          "desc": "暂停/继续"
+        }
+      }
+    }
+  },
+  "system": {
+    "name": "系统控制",
+    "commands": {
+      "volume_set": {
+        "cmd": "powershell -Command \"(New-Object -ComObject WScript.Shell).SendKeys([char]173)\"",
+        "desc": "音量调节（Windows）"
+      },
+      "open": {
+        "cmd": "start \"\" \"{path}\"",
+        "desc": "打开文件或应用"
+      },
+      "shutdown": {
+        "cmd": "shutdown /s /t {delay}",
+        "desc": "定时关机（delay=秒）"
+      },
+      "lock": {
+        "cmd": "rundll32.exe user32.dll,LockWorkStation",
+        "desc": "锁屏"
+      }
+    }
+  },
+  "web": {
+    "name": "网络请求",
+    "commands": {
+      "get": {
+        "cmd": "curl -sL \"{url}\"",
+        "desc": "GET 请求"
+      },
+      "post": {
+        "cmd": "curl -sX POST \"{url}\" -H \"Content-Type: application/json\" -d '{data}'",
+        "desc": "POST JSON 请求"
+      }
+    }
+  }
+}
