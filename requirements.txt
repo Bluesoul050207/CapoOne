@@ -1,0 +1,4 @@
+# 至少装一个
+anthropic>=0.40.0   # Anthropic Claude 后端（需代理 + 外国卡）
+openai>=1.0.0       # OpenAI 兼容后端（DeepSeek / Qwen / OpenAI 等）
+pillow>=10.0.0      # 图片识别（可选）
