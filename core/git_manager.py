@@ -24,7 +24,7 @@ class GitManager:
             r = subprocess.run(
                 ["git"] + list(args),
                 cwd=str(self.repo_path),
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             return r.returncode, r.stdout.strip(), r.stderr.strip()
         except Exception as e:

@@ -82,7 +82,7 @@ async def shell(request: Request):
     try:
         result = subprocess.run(
             command, shell=True, capture_output=True, text=True,
-            timeout=30, cwd=cwd,
+            encoding="utf-8", errors="replace", timeout=30, cwd=cwd,
         )
         output = result.stdout
         if result.stderr:
@@ -305,7 +305,8 @@ def _free_port(port: int):
     try:
         result = subprocess.run(
             f'netstat -ano | findstr "LISTENING.*:{port}"',
-            shell=True, capture_output=True, text=True, timeout=5,
+            shell=True, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=5,
         )
         for line in result.stdout.strip().split("\n"):
             parts = line.strip().split()
