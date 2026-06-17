@@ -1,0 +1,32 @@
+from pathlib import Path
+from .base import ToolHandler
+
+
+class WriteFileHandler(ToolHandler):
+    name = "write_file"
+    description = "写入文件（创建或覆盖）。需要用户确认。"
+
+    def input_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "文件的绝对路径"},
+                "content": {"type": "string", "description": "要写入的内容"},
+            },
+            "required": ["file_path", "content"],
+        }
+
+    def needs_confirm(self, tool_input: dict) -> tuple[bool, str]:
+        return True, f"write: {tool_input.get('file_path', '?')}"
+
+    def execute(self, tool_input: dict) -> str:
+        file_path = tool_input["file_path"]
+        content = tool_input["content"]
+
+        try:
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return f"wrote {file_path} ({len(content)} chars)"
+        except Exception as e:
+            return f"write failed: {e}"
