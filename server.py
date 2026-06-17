@@ -407,6 +407,8 @@ async def ws_chat(ws: WebSocket, session_id: str):
         try:
             data = await ws.receive_json()
         except WebSocketDisconnect:
+            sessions.pop(session_id, None)
+            _ws_db_sessions.pop(session_id, None)
             break
         except Exception:
             continue
