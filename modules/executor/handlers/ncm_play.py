@@ -37,12 +37,23 @@ class NcmPlayHandler(ToolHandler):
         except Exception as e:
             return ToolResult.fail(f"API search failed: {e}")
 
-        # 2. 解析
+        # 2. 解析 + 匹配度检查
         songs = data.get("result", {}).get("songs", [])
         if not songs:
-            return ToolResult.fail(f"no results for: {query}")
+            return ToolResult.fail(f"no results for: {query} — 可能是翻译名或拼写不对，试试web_search查原名")
         song = songs[0]
         name = song.get("name", "?")
+
+        # 相似度：歌名和查询的关键字重合度
+        qchars = set(query.replace(" ", ""))
+        nchars = set(name.replace(" ", ""))
+        overlap = len(qchars & nchars) / max(len(qchars), 1)
+        if overlap < 0.15 and len(query) >= 4:
+            artists = ", ".join(a.get("name", "?") for a in song.get("artists", []))
+            return ToolResult.fail(
+                f"最佳匹配'{name} - {artists}'与'{query}'重合度仅{int(overlap*100)}%。可能是翻译名，请web_search查原名后重新ncm_play。",
+                "low_match"
+            )
         artists = ", ".join(a.get("name", "?") for a in song.get("artists", []))
         oid = song.get("id", "")
 
