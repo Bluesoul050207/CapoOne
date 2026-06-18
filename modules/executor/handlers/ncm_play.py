@@ -25,6 +25,20 @@ class NcmPlayHandler(ToolHandler):
     def execute(self, tool_input: dict) -> ToolResult:
         query = tool_input["query"]
 
+        # 0. 查记忆映射：上次用户纠正过吗？
+        try:
+            from modules.persona.db import PersonaDB
+            db = PersonaDB()
+            mems = db.get_all_memories()
+            for m in mems:
+                if m["key"] in query or query in m["key"]:
+                    mapped = m["value"].strip()
+                    if mapped and mapped != query and len(mapped) < 200:
+                        query = mapped.split("\n")[0]  # 取第一行作为映射
+                        break
+        except Exception:
+            pass
+
         # 1. 搜索 — 网易云公开搜索API
         try:
             url = f"https://music.163.com/api/search/get?s={urllib.parse.quote(query)}&type=1&limit=5"
