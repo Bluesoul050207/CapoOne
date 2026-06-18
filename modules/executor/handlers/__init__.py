@@ -9,6 +9,7 @@ from .process import ProcessListHandler, ProcessKillHandler, ProcessStartHandler
 from .clipboard import ClipboardReadHandler, ClipboardWriteHandler
 from .screenshot import ScreenshotHandler
 from .cmd_tools import CmdHelpHandler, CmdRunHandler
+from .ncm_play import NcmPlayHandler
 ALL_HANDLERS = [
     ReadFileHandler, WriteFileHandler, ListDirHandler,
     RunShellHandler, SearchHandler,
@@ -18,4 +19,5 @@ ALL_HANDLERS = [
     ClipboardReadHandler, ClipboardWriteHandler,
     ScreenshotHandler,
     CmdHelpHandler, CmdRunHandler,
+    NcmPlayHandler,
 ]
