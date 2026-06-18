@@ -109,6 +109,7 @@ async def run_turn(
 
         conv.add_assistant_message(assistant_text, tool_calls=anthropic_tcs)
         tool_results = []
+        had_failure = False
 
         for tc in anthropic_tcs:
             name, inp = tc["name"], tc.get("input", {})
@@ -131,8 +132,15 @@ async def run_turn(
             emit("tool_result", brief + ("..." if len(result_text) > 150 else ""),
                  ok=tr.ok, error=tr.error or "", tool=name)
             tool_results.append({"type": "tool_result", "tool_use_id": tc["id"], "content": result_text})
+            if not tr.ok:
+                had_failure = True
 
         conv.messages.append({"role": "user", "content": tool_results})
+
+        # 自反思：工具失败时不退出，追问自己后重试
+        if had_failure:
+            conv.messages.append({"role": "user", "content": "上一步失败了。不要放弃。分析失败原因（搜索结果为空？语言不对？关键词太窄？），换方法重试——搜得不对就web_search查正确名称，API没结果就换关键词。最多试3次。"})
+
         conv.trim()
 
     emit("error", "max tool iterations")
