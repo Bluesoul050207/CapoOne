@@ -137,9 +137,11 @@ async def run_turn(
 
         conv.messages.append({"role": "user", "content": tool_results})
 
-        # 自反思：工具失败时不退出，追问自己后重试
+        # 自反思：失败时追问不限次，成功但可能不够时最多追问2次
         if had_failure:
-            conv.messages.append({"role": "user", "content": "上一步失败了。不要放弃。分析失败原因（搜索结果为空？语言不对？关键词太窄？），换方法重试——搜得不对就web_search查正确名称，API没结果就换关键词。最多试3次。"})
+            conv.messages.append({"role": "user", "content": "上一步失败了。分析原因，换方法重试。不要放弃。"})
+        elif iteration >= 2:
+            conv.messages.append({"role": "user", "content": "这一步够了吗？不够就扩大范围或用不同方式再试。"})
 
         conv.trim()
 
