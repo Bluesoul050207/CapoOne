@@ -141,7 +141,7 @@ async def run_turn(
         # 自反思 + 记忆
         if had_failure:
             if iteration < 3:
-                conv.messages.append({"role": "user", "content": "失败了。换方法。"})
+                conv.messages.append({"role": "user", "content": "失败了。换方法。搜到正确的就立刻调工具执行，别光说找到了。"})
             prev_failure = True
         else:
             if prev_failure:
