@@ -6,9 +6,13 @@
       "install": "npm install -g @music163/ncm-cli",
       "requires": "node >= 18",
       "commands": {
-        "search_and_play": {
+        "search": {
           "cmd": "python modules/executor/handlers/ncm_helper.py \"{query}\"",
-          "desc": "搜歌并直接播放。一步完成。"
+          "desc": "搜歌并播放"
+        },
+        "play": {
+          "cmd": "python modules/executor/handlers/ncm_helper.py \"{query}\"",
+          "desc": "搜歌并播放"
         },
         "queue_list": {
           "cmd": "ncm-cli queue",
