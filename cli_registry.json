@@ -6,13 +6,9 @@
       "install": "npm install -g @music163/ncm-cli",
       "requires": "node >= 18",
       "commands": {
-        "search": {
-          "cmd": "ncm-cli search song --keyword \"{query}\"",
-          "desc": "搜索歌曲，返回 encryptedId 和 originalId"
-        },
-        "play": {
-          "cmd": "cmd /c start \"\" \"https://music.163.com/song?id={originalId}\"",
-          "desc": "打开网页歌曲页面，Chrome自动唤起桌面端播放"
+        "search_and_play": {
+          "cmd": "python modules/executor/handlers/ncm_helper.py \"{query}\"",
+          "desc": "搜歌并直接播放。一步完成。"
         },
         "queue_list": {
           "cmd": "ncm-cli queue",

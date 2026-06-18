@@ -132,6 +132,8 @@ def detect_backend() -> tuple[str, str]:
     # 自动检测
     if HAS_ANTHROPIC and os.environ.get("ANTHROPIC_API_KEY"):
         return "anthropic", "检测到 ANTHROPIC_API_KEY"
+    if HAS_OPENAI and os.environ.get("DASHSCOPE_API_KEY"):
+        return "qwen", "检测到 DASHSCOPE_API_KEY"
     if HAS_OPENAI and os.environ.get("DEEPSEEK_API_KEY"):
         return "deepseek", "检测到 DEEPSEEK_API_KEY"
     if HAS_OPENAI and os.environ.get("OPENAI_API_KEY"):
@@ -148,6 +150,11 @@ def get_client(backend: str):
         return OpenAI(
             api_key=os.environ["DEEPSEEK_API_KEY"],
             base_url="https://api.deepseek.com",
+        )
+    elif backend == "qwen":
+        return OpenAI(
+            api_key=os.environ["DASHSCOPE_API_KEY"],
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
     elif backend == "glm":
         return OpenAI(
@@ -762,6 +769,7 @@ def main():
         "anthropic": MODEL,
         "deepseek": "deepseek-chat",
         "openai": "gpt-4o",
+        "qwen": "qwen-max",
     }.get(backend, "unknown")
 
     # 对话持久化
@@ -815,7 +823,7 @@ def main():
     from core.agent_loop import run_turn as _run_turn
 
     model_name = os.environ.get("AI_MODEL") or {
-        "deepseek": "deepseek-chat", "openai": "gpt-4o",
+        "deepseek": "deepseek-chat", "openai": "gpt-4o", "qwen": "qwen-max",
     }.get(backend, "deepseek-chat")
 
     async def _agent_confirm(msg: str) -> bool:
