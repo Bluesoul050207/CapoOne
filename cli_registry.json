@@ -7,12 +7,12 @@
       "requires": "node >= 18",
       "commands": {
         "search": {
-          "cmd": "python modules/executor/handlers/ncm_helper.py \"{query}\"",
-          "desc": "搜歌并播放"
+          "cmd": "ncm-cli search song --keyword \"{query}\" --output json",
+          "desc": "搜索歌曲。返回JSON中的originalId（纯数字）用于播放"
         },
         "play": {
-          "cmd": "python modules/executor/handlers/ncm_helper.py \"{query}\"",
-          "desc": "搜歌并播放"
+          "cmd": "cmd /c start \"\" \"https://music.163.com/song?id={originalId}\"",
+          "desc": "用Chrome打开歌页唤起桌面端播放"
         },
         "queue_list": {
           "cmd": "ncm-cli queue",
