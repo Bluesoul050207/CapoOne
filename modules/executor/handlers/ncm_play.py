@@ -25,17 +25,21 @@ class NcmPlayHandler(ToolHandler):
     def execute(self, tool_input: dict) -> ToolResult:
         query = tool_input["query"]
 
-        # 0. 查记忆映射：上次用户纠正过吗？
+        # 0. 查记忆映射：精确匹配优先
         try:
             from modules.persona.db import PersonaDB
             db = PersonaDB()
             mems = db.get_all_memories()
+            best = None
             for m in mems:
-                if m["key"] in query or query in m["key"]:
-                    mapped = m["value"].strip()
-                    if mapped and mapped != query and len(mapped) < 200:
-                        query = mapped.split("\n")[0]  # 取第一行作为映射
-                        break
+                if m["key"] == query:  # 精确匹配
+                    best = m["value"]
+                    break
+                if m["key"] in query or query in m["key"]:  # 部分匹配
+                    if best is None:
+                        best = m["value"]
+            if best and best.strip() != query and len(best.strip()) < 200:
+                query = best.strip().split("\n")[0]
         except Exception:
             pass
 
