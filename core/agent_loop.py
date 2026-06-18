@@ -145,7 +145,7 @@ async def run_turn(
             prev_failure = True
         else:
             if prev_failure:
-                conv.messages.append({"role": "user", "content": "成功了。绕弯路才成的？调save_memory记关键词映射，save_rule记方法。"})
+                conv.messages.append({"role": "user", "content": "绕弯路成功了。先继续完成用户请求（播放/搜索），再调save_memory记下这次的经验。"})
                 prev_failure = False
             elif iteration >= 2:
                 conv.messages.append({"role": "user", "content": "这一步够吗？不够就扩大范围再试。"})
