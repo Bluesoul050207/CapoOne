@@ -38,7 +38,8 @@ async def run_turn(
         evt.update(extra)
         events.append(evt)
 
-    # GUI 关键词检测：用户消息含这些词时自动截屏
+    prev_failure = False  # 上轮是否失败
+
     for iteration in range(6):
         if iteration == 0:
             emit("status", "thinking...")
@@ -137,12 +138,17 @@ async def run_turn(
 
         conv.messages.append({"role": "user", "content": tool_results})
 
-        # 自反思：连败3次才停，成功时在第3轮后追问
+        # 自反思 + 记忆
         if had_failure:
             if iteration < 3:
                 conv.messages.append({"role": "user", "content": "失败了。换方法。"})
-        elif iteration >= 2:
-            conv.messages.append({"role": "user", "content": "这一步够了吗？不够就扩大范围或用不同方式再试。"})
+            prev_failure = True
+        else:
+            if prev_failure:
+                conv.messages.append({"role": "user", "content": "成功了。绕弯路才成的？调save_memory记关键词映射，save_rule记方法。"})
+                prev_failure = False
+            elif iteration >= 2:
+                conv.messages.append({"role": "user", "content": "这一步够吗？不够就扩大范围再试。"})
 
         conv.trim()
 
