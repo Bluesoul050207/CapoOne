@@ -172,106 +172,6 @@ def get_client(backend: str):
 # 工具定义
 # ============================================================
 
-TOOLS = [
-    {
-        "name": "read_file",
-        "description": "读取文件内容。返回带行号的内容。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "文件的绝对路径"
-                },
-                "offset": {
-                    "type": "integer",
-                    "description": "起始行号（可选，默认从头开始）"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "读取行数（可选，默认 100 行）"
-                }
-            },
-            "required": ["file_path"]
-        }
-    },
-    {
-        "name": "write_file",
-        "description": "写入文件（覆盖已有文件）。危险操作，会请求确认。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "文件的绝对路径"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "要写入的内容"
-                }
-            },
-            "required": ["file_path", "content"]
-        }
-    },
-    {
-        "name": "list_directory",
-        "description": "列出目录中的文件和子目录。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "目录的绝对路径，默认为当前工作目录"
-                },
-                "pattern": {
-                    "type": "string",
-                    "description": "可选的 glob 模式过滤，如 '*.py'"
-                }
-            },
-            "required": []
-        }
-    },
-    {
-        "name": "run_shell",
-        "description": "执行 shell 命令并返回输出。危险命令会请求确认。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "要执行的命令"
-                },
-                "description": {
-                    "type": "string",
-                    "description": "对命令用途的简短描述"
-                }
-            },
-            "required": ["command"]
-        }
-    },
-    {
-        "name": "search_content",
-        "description": "在文件中搜索指定内容（类似 grep）。",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pattern": {
-                    "type": "string",
-                    "description": "要搜索的文本或正则表达式"
-                },
-                "directory": {
-                    "type": "string",
-                    "description": "搜索的目录"
-                },
-                "file_pattern": {
-                    "type": "string",
-                    "description": "限制搜索的文件类型，如 '*.py'"
-                }
-            },
-            "required": ["pattern", "directory"]
-        }
-    },
-]
 
 
 # ============================================================
@@ -533,9 +433,8 @@ def _get_system_prompt():
 
 
 def set_persona(enabled: bool):
-    global _persona_enabled, _PERSONA_PROMPT_CACHE
+    global _persona_enabled
     _persona_enabled = enabled
-    _PERSONA_PROMPT_CACHE = None  # 清缓存，下次重拼
 
 
 class NeedsConfirmation(Exception):
@@ -720,25 +619,21 @@ def init_dual_model():
     return False
 
 
-_PERSONA_PROMPT_CACHE = None  # prompt 缓存，不变不重算
-
 def _rephrase_with_persona(worker_text: str) -> str:
     """用 Persona 模型（GLM）把 Worker 的回复加上 Lain 人格"""
-    global _PERSONA_PROMPT_CACHE
     if not _dual_model or not _glm_client or not _persona_enabled:
         return worker_text
 
     if not worker_text or not worker_text.strip():
         return "嗯……我好像想不出该说什么。再问我一次吧。"
 
-    if _PERSONA_PROMPT_CACHE is None:
-        _PERSONA_PROMPT_CACHE = _get_system_prompt() + "\n\n你的任务：把一段文字改成你的说话方式。只输出改写后的版本，不保留原文。\n1. 砍掉\"有什么可以帮你的\"\"尽管问我\"这种客服话术\n2. 不主动列功能不介绍自己能做什么\n3. 用户问什么就答什么没问的别多说\n4. 绝不提AI助手模型文件系统命令行这些词\n5. 保持语气轻柔简短句尾带……呢吧\n6. 只输出改写后内容不要把原文也写出来"
+    persona_prompt = _get_system_prompt() + "\n\n你的任务：把一段文字改成你的说话方式。只输出改写后版本，不保留原文。\n1. 砍掉\"有什么可以帮你的\"\"尽管问我\"这种客服话术\n2. 不主动列功能不介绍自己能做什么\n3. 用户问什么就答什么没问的别多说\n4. 绝不提AI助手模型文件系统命令行这些词\n5. 保持语气轻柔简短句尾带……呢吧\n6. 只输出改写后内容不要把原文也写出来"
 
     try:
         r = _glm_client.chat.completions.create(
             model="glm-4-flash",
             messages=[
-                {"role": "system", "content": _PERSONA_PROMPT_CACHE},
+                {"role": "system", "content": persona_prompt},
                 {"role": "user", "content": f"用你的语气重新说下面的话，只输出新版本：\n\n{worker_text}"},
             ],
             max_tokens=256,
