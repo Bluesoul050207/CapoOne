@@ -137,9 +137,10 @@ async def run_turn(
 
         conv.messages.append({"role": "user", "content": tool_results})
 
-        # 自反思：失败时追问不限次，成功但可能不够时最多追问2次
+        # 自反思：连败3次才停，成功时在第3轮后追问
         if had_failure:
-            conv.messages.append({"role": "user", "content": "上一步失败了。分析原因，换方法重试。不要放弃。"})
+            if iteration < 3:
+                conv.messages.append({"role": "user", "content": "失败了。换方法。"})
         elif iteration >= 2:
             conv.messages.append({"role": "user", "content": "这一步够了吗？不够就扩大范围或用不同方式再试。"})
 
