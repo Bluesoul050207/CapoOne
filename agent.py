@@ -453,7 +453,7 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
                 command,
                 shell=True,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 timeout=30,
                 cwd=os.getcwd(),
             )
