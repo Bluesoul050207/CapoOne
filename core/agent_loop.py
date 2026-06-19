@@ -35,6 +35,11 @@ POST_TOOL_HINTS = {
         "放歌/播放/音乐相关 → 只用 ncm_play，不要用 cmd_run。"
         "ncm_play 内部自动搜索+播放，不需要你手动搜 API。"
     ),
+    # ncm_play 播完 → 问用户确认版本对不对
+    "ncm_play": (
+        "播完了。问用户：放的是对的版本吗？不对的话告诉我正确版本，我重新放。"
+        "不要自己再放一遍。等用户回复。"
+    ),
 }
 
 # 绕弯路成功后提醒记经验
@@ -268,8 +273,6 @@ async def run_turn(
         ncm_fails = [(tc.get("input",{}).get("query",""), tc.get("id","")) for tc in anthropic_tcs if tc["name"]=="ncm_play"]
         if len(ncm_fails) >= 2 and ncm_fails[0][0] == ncm_fails[-1][0]:
             conv.messages.append({"role":"user","content":f"ncm_play('{ncm_fails[0][0]}') 已失败过。换 web_search 找到的正确名字再试，不要重复同一 query。"})
-
-        # ---- ncm_play 防双开：本轮已播过 → 提醒不要再播 ----
         ncm_count = sum(1 for tc in anthropic_tcs if tc["name"] == "ncm_play")
         if ncm_count > 1 and "ncm_play" in tools_used:
             conv.messages.append({"role": "user", "content": "ncm_play 本轮已执行过，不要再重复播放。继续下一步或结束。"})
