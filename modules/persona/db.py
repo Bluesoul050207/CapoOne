@@ -106,12 +106,12 @@ class PersonaDB:
 
     # ---- Memories ----
 
-    def set_memory(self, key: str, value: str, category: str = "general") -> None:
+    def set_memory(self, key: str, value: str, category: str = "general", target: str = "both") -> None:
         self.conn.execute(
-            "INSERT INTO memories (key, value, category) VALUES (?, ?, ?) "
+            "INSERT INTO memories (key, value, category, target) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
-            "category = excluded.category, updated_at = datetime('now')",
-            (key, value, category),
+            "category = excluded.category, target = excluded.target, updated_at = datetime('now')",
+            (key, value, category, target),
         )
         self.conn.commit()
 
@@ -135,13 +135,28 @@ class PersonaDB:
     # ---- System Prompt 拼接 ----
 
     def build_worker_suffix(self) -> str:
-        """Worker 模型 (DS/Qwen) 的 prompt 后缀：只含工作约束（constraint）"""
+        """Worker 模型 (DS/Qwen) 的 prompt 后缀：工作约束 + 用户记忆"""
         parts = []
+
+        # 1. 工作约束
         rules = self.get_rules(rule_type="constraint", enabled_only=True)
         if rules:
             parts.append("工作约束：")
             for r in rules:
                 parts.append(f"- {r['content']}")
+
+        # 2. 用户记忆（Worker: 只读 both + worker）
+        memories = self.get_all_memories()
+        worker_memories = [m for m in memories
+            if m.get("category","general") not in ("song","internal")
+            and m.get("target","both") in ("both","worker")]
+        if worker_memories:
+            if parts:
+                parts.append("")
+            parts.append("已知信息：")
+            for m in worker_memories:
+                parts.append(f"- {m['key']}: {m['value']}")
+
         return "\n".join(parts) if parts else ""
 
     def build_persona_suffix(self) -> str:
@@ -162,14 +177,16 @@ class PersonaDB:
             for r in rules:
                 parts.append(f"- {r['content']}")
 
-        # 3. 用户记忆
+        # 3. 用户记忆（Persona: 只读 both + persona）
         memories = self.get_all_memories()
-        user_memories = [m for m in memories if m.get("category", "general") not in ("song", "internal")]
-        if user_memories:
+        persona_memories = [m for m in memories
+            if m.get("category","general") not in ("song","internal")
+            and m.get("target","both") in ("both","persona")]
+        if persona_memories:
             if parts:
                 parts.append("")
             parts.append("已知信息：")
-            for m in user_memories:
+            for m in persona_memories:
                 parts.append(f"- {m['key']}: {m['value']}")
 
         if parts:

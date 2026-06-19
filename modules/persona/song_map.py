@@ -39,7 +39,7 @@ class SongMapDB:
 
     def set(self, key: str, value: str):
         """写入或更新映射。拒绝超过 80 字的值（啰嗦说明不是歌名）。"""
-        k, v = key.strip(), value.strip()
+        k, v = key.strip().strip('"').strip("'"), value.strip().strip('"').strip("'")
         if len(v) > 80:
             return  # 拒绝：太长的值不是歌名，是说明文字
         self.conn.execute(

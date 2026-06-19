@@ -41,6 +41,7 @@ class Conversation:
         self.system_prompt = system_prompt
         self.max_messages = max_messages
         self.messages: list[dict] = []
+        self.temp_rules: list[str] = []  # 对话内临时规则，会话结束忘
 
     def add_user_message(self, content: str | list):
         """添加用户消息，支持文本或图片"""

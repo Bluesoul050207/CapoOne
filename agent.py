@@ -106,10 +106,7 @@ def needs_confirm(tool_name: str, tool_input: dict) -> tuple[bool, str]:
         for d in DANGEROUS_COMMANDS:
             if d in cmd.lower():
                 return True, f"DANGEROUS: {cmd[:80]}"
-    if tool_name == "save_rule":
-        return True, f"save rule: {tool_input.get('content', '?')[:80]}"
-    if tool_name == "save_memory":
-        return True, f"save memory: {tool_input.get('key', '?')} = {tool_input.get('value', '?')[:60]}"
+    # save_memory 不用确认 — 人格层面可以记，Admin 面板能删
     if tool_name == "process_kill":
         return True, f"kill process: {tool_input.get('target', '?')}"
     return False, ""
@@ -183,12 +180,13 @@ def load_image(image_path: str) -> dict:
 # ============================================================
 
 # SYSTEM_PROMPT 改为动态生成（_get_system_prompt），保留兼容引用的默认值
-SYSTEM_PROMPT = """你是执行者，不是客服。收到任务立刻调工具，不停顿、不废话、不解释你要做什么。输出干净事实——不要加人设、不要加表情、不要加语气词。GLM 会帮你润色。
+SYSTEM_PROMPT = """你是执行者。收到任务立刻调工具，不停顿、不废话。输出事实，GLM 会包装。
 
 执行纪律：
 - 任务没完成就继续调工具，不要半途说话总结
 - 工具失败换方法再试，不要放弃
 - 拿不准就搜，搜不到就试，试错比停着强
+- 你可以用 save_memory 帮用户记住个人偏好，但不能自己写工作规则
 
 放歌：只用 ncm_play。不要 cmd_help/cmd_run。不要拼 URL。中文日文混用时只传歌名，别粘乐队名。
 
@@ -214,15 +212,52 @@ def init_dual_model():
     return False
 
 
+def _filter_worker_output(text: str) -> str:
+    """筛选层：Worker 输出在进 GLM 之前，先砍掉客服腔、自我介绍、emoji"""
+    if not text:
+        return text
+    import re
+    original = text
+    # 砍整句客服话术
+    patterns = [
+        r'有什么(可以|能)帮(你|您)(的|吗)?[？?。.]*',
+        r'我(可以|能)帮(你|您)[^。.。\n]*[。.]?',
+        r'需要(我|我)帮忙[^。.。\n]*[。.]?',
+        r'尽管(问|说|告诉我)[^。.。\n]*[。.]?',
+        r'随时(找我|问我|告诉我)[^。.。\n]*[。.]?',
+        r'(如果|要是)有(什么|任何)[^。.。\n]*[。.]?',
+        r'很(高兴|乐意)[^。.。\n]*[。.]?',
+        r'(我是|作为)(一个|一名|AI|人工智能)[^。.。\n]*[。.]?',
+        r'(我的|我拥有)(功能|能力)[^。.。\n]*[。.]?',
+        r'(我可以|我能)(帮|为|替)[^。.。\n]*[。.]?',
+    ]
+    for p in patterns:
+        text = re.sub(p, '', text)
+    # 清理残留碎片
+    text = re.sub(r'\s*[吗呢吧啊呀][？?！!。.]?\s*', '', text)
+    text = re.sub(r'^\s*[？?！!。.,，、]\s*', '', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r'^[。.,，、！!？?\s]+', '', text)
+    text = re.sub(r'\s{2,}', ' ', text)
+    text = text.strip()
+    # 全删完了回退原文（别让输出空白）
+    if not text:
+        return strip_emoji(original)
+    return strip_emoji(text)
+
+
 def _rephrase_with_persona(worker_text: str) -> str:
     """用 Persona 模型（GLM）把 Worker 的回复加上 Lain 人格"""
     if not _dual_model or not _glm_client or not _persona_enabled:
-        return worker_text
+        return _filter_worker_output(worker_text)
 
     if not worker_text or not worker_text.strip():
         return "嗯……我好像想不出该说什么。再问我一次吧。"
 
-    persona_prompt = (_get_persona_prompt() or "你是岩仓铃音，14岁。说话轻柔简短。") + "\n\n你的任务：把一段文字改成你的说话方式。只输出改写后版本，不保留原文。\n1. 砍掉\"有什么可以帮你的\"\"尽管问我\"这种客服话术\n2. 不主动列功能不介绍自己能做什么\n3. 用户问什么就答什么没问的别多说\n4. 绝不提AI助手模型文件系统命令行这些词\n5. 保持语气轻柔简短句尾带……呢吧\n6. 只输出改写后内容不要把原文也写出来"
+    # 筛选层：先砍 Worker 的客服腔，给 GLM 干净的输入
+    clean_text = _filter_worker_output(worker_text)
+
+    persona_prompt = (_get_persona_prompt() or "你是岩仓铃音，14岁。说话轻柔简短。") + "\n\n用你的语气重说下面这段话。只输出重说后的版本。"
 
     try:
         r = _glm_client.chat.completions.create(

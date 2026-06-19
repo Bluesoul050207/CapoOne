@@ -49,9 +49,6 @@ class SaveMemoryHandler(ToolHandler):
     name = "save_memory"
     description = "永久保存一条事实记忆。当用户说'记住xxx是yyy'时调用。"
 
-    def needs_confirm(self, tool_input: dict) -> tuple[bool, str]:
-        return True, f"save memory: {tool_input.get('key', '?')} = {tool_input.get('value', '?')[:60]}"
-
     def input_schema(self) -> dict:
         return {
             "type": "object",
@@ -65,9 +62,27 @@ class SaveMemoryHandler(ToolHandler):
     def execute(self, tool_input: dict) -> ToolResult:
         key = tool_input["key"]
         value = tool_input["value"]
+
+        # 关键词检测：只在用户明确说"记住"类词语时才真写
+        trigger_words = ["记住", "记下来", "别忘了", "以后记住了", "存一下", "记着", "keep in mind", "remember"]
+        user_said_remember = False
+        try:
+            from .temp_rule import _get_current_conv
+            conv = _get_current_conv()
+            if conv:
+                for m in reversed(conv.messages):
+                    if m["role"] == "user" and isinstance(m.get("content"), str):
+                        if any(w in m["content"] for w in trigger_words):
+                            user_said_remember = True
+                        break
+        except Exception:
+            user_said_remember = True  # 拿不到对话就放行
+
+        if not user_said_remember:
+            return ToolResult.success(f"(not saved — 用户没说要记住)")
+
         try:
             db = PersonaDB()
-            # 冲突检测：key 已存在时追加而非覆盖
             old = db.get_memory(key)
             if old:
                 old_val = old["value"]

@@ -43,6 +43,22 @@ EXPERIENCE_REMINDER = (
 )
 
 
+def _user_wants_music(conv) -> bool:
+    """用户上一条消息是否包含音乐意图"""
+    for m in reversed(conv.messages):
+        if m["role"] == "user" and isinstance(m.get("content"), str):
+            text = m["content"]
+            return any(w in text for w in ["放", "播", "听", "唱", "歌", "play", "music"])
+    return False
+
+def _user_wants_search(conv) -> bool:
+    """用户上一条消息是否要求搜索"""
+    for m in reversed(conv.messages):
+        if m["role"] == "user" and isinstance(m.get("content"), str):
+            text = m["content"]
+            return any(w in text for w in ["搜", "查", "找", "search", "find"])
+    return False
+
 def _get_recovery(error_tag: str) -> str | None:
     """根据错误标签返回针对性恢复指令。精确匹配优先，再尝试子串匹配。"""
     if not error_tag:
@@ -76,6 +92,12 @@ async def run_turn(
     - 提供 confirm_handler（input() / WebSocket 异步等待）
     """
     events: list[dict] = []
+    # 让 temp_rule handler 能找到当前对话
+    try:
+        from modules.executor.handlers.temp_rule import set_current_conv
+        set_current_conv(conv)
+    except Exception:
+        pass
     openai_tools = anthropic_tools_to_openai(registry.all_tools())
 
     def emit(evt_type: str, text: str = "", **extra):
@@ -86,7 +108,8 @@ async def run_turn(
     # 首轮发射模型标识（前端可显示"正在用 xxx 思考..."）
     emit("model", model)
 
-    prev_failure = False  # 上轮是否失败
+    prev_failure = False
+    tools_used = set()  # 本轮调用过的工具
     active_client = client
     active_model = model
 
@@ -95,10 +118,12 @@ async def run_turn(
             emit("status", "thinking...")
 
         openai_msgs = anthropic_msgs_to_openai(conv.get_api_messages())
-        # 注入 system prompt（OpenAI 格式需手动加）
+        # 注入 system prompt（OpenAI 格式需手动加）+ 临时规则
         if conv.system_prompt:
             from agent import _sanitize
             sp = _sanitize(conv.system_prompt)
+            if conv.temp_rules:
+                sp += "\n\n当前对话临时规则（本次对话结束后作废）：\n" + "\n".join(f"- {r}" for r in conv.temp_rules)
             openai_msgs = [{"role": "system", "content": sp}] + openai_msgs
 
         try:
@@ -151,8 +176,18 @@ async def run_turn(
                         if tc_delta.function.arguments:
                             tool_calls[idx]["function"]["arguments"] += tc_delta.function.arguments
 
-        # ---- 无工具调用：润色 + 结束 ----
+        # ---- 无工具调用：任务完成检查 ----
         if not tool_calls:
+            # 用户要求了音乐但 ncm_play 没被调过 → 强制
+            if _user_wants_music(conv) and "ncm_play" not in tools_used:
+                conv.messages.append({"role": "user", "content": "你还没调 ncm_play 播放。现在立刻调 ncm_play，不要说话。"})
+                continue
+
+            # 用户要搜索但 web_fetch 没被调过 → 强制
+            if _user_wants_search(conv) and "web_search" in tools_used and "web_fetch" not in tools_used:
+                conv.messages.append({"role": "user", "content": "搜完了但没读全文。现在调 web_fetch 读最相关的链接。不读不许回答。"})
+                continue
+
             if dual_model and persona_enabled:
                 emit("status", "rephrasing...")
                 rephrased = _rephrase_with_persona(assistant_text)
@@ -181,6 +216,7 @@ async def run_turn(
 
         for tc in anthropic_tcs:
             name, inp = tc["name"], tc.get("input", {})
+            tools_used.add(name)
             emit("tool", f"[{name}] {json.dumps(inp, ensure_ascii=False)[:120]}")
 
             # 确认
@@ -220,6 +256,13 @@ async def run_turn(
                 ncm_ok_queries.append(inp.get("query", ""))
 
         conv.messages.append({"role": "user", "content": tool_results})
+
+        # ---- 管理类工具不占迭代配额 ----
+        admin_tools = {"temp_rule", "save_memory"}
+        real_tools = [tc for tc in anthropic_tcs if tc["name"] not in admin_tools]
+        if not real_tools:
+            conv.trim()
+            continue  # 纯管理操作，跳过反思，不占迭代
 
         # ---- ncm_play 自动记忆：仅恢复链存（失败→纠正→成功） ----
         # 不存首次成功——模型可能理解错，污染映射
