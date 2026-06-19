@@ -264,6 +264,11 @@ async def run_turn(
             conv.trim()
             continue  # 纯管理操作，跳过反思，不占迭代
 
+        # ---- ncm_play 防双开：本轮已播过 → 提醒不要再播 ----
+        ncm_count = sum(1 for tc in anthropic_tcs if tc["name"] == "ncm_play")
+        if ncm_count > 1 and "ncm_play" in tools_used:
+            conv.messages.append({"role": "user", "content": "ncm_play 本轮已执行过，不要再重复播放。继续下一步或结束。"})
+
         # ---- ncm_play 自动记忆：仅恢复链存（失败→纠正→成功） ----
         # 不存首次成功——模型可能理解错，污染映射
         try:

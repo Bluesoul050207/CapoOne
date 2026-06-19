@@ -112,7 +112,7 @@ class ProcessStartHandler(ToolHandler):
         import os as _os
         import subprocess as _sp
 
-        # 绝对路径 → startfile；系统命令 → subprocess
+        # 绝对路径 → startfile
         if _os.path.exists(path):
             try:
                 _os.startfile(path)
@@ -120,9 +120,30 @@ class ProcessStartHandler(ToolHandler):
             except Exception as e:
                 return ToolResult.fail(f"start failed: {e}", str(e))
 
-        # PATH 里的程序（如 notepad、cmd）
+        # 常见应用路径查找
+        common = {
+            "wechat": [r"D:\Chatsoftware\Weixin\Weixin.exe", r"C:\Program Files\Tencent\WeChat\WeChat.exe"],
+            "微信": [r"D:\Chatsoftware\Weixin\Weixin.exe", r"C:\Program Files\Tencent\WeChat\WeChat.exe"],
+            "chrome": [r"C:\Program Files\Google\Chrome\Application\chrome.exe"],
+            "notepad": ["notepad.exe"],
+            "cmd": ["cmd.exe"],
+        }
+        key = path.lower().replace(".exe", "").strip()
+        if key in common:
+            for p in common[key]:
+                try:
+                    if _os.path.exists(p):
+                        _os.startfile(p)
+                        return ToolResult.success(f"started: {p}")
+                    else:
+                        _sp.Popen(p, shell=True)
+                        return ToolResult.success(f"started (shell): {p}")
+                except Exception:
+                    continue
+
+        # PATH 里的程序
         try:
             _sp.Popen(path, shell=True)
             return ToolResult.success(f"started (shell): {path}")
         except Exception as e:
-            return ToolResult.fail(f"start failed: {e}", str(e))
+            return ToolResult.fail(f"start failed: {path} not found. try full path.", str(e))

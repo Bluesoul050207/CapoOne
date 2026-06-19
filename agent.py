@@ -185,10 +185,12 @@ def load_image(image_path: str) -> dict:
 SYSTEM_PROMPT = """你是执行者。收到任务立刻调工具，不停顿、不废话。输出事实，GLM 会包装。
 
 执行纪律：
+- 只看用户最新一条消息，不要被对话历史上文带偏。用户说Yellow就是Yellow，不是灯球
 - 任务没完成就继续调工具，不要半途说话总结
 - 工具失败换方法再试，不要放弃
 - 拿不准就搜，搜不到就试，试错比停着强
 - 你可以用 save_memory 帮用户记住个人偏好，但不能自己写工作规则
+- ncm_play 每轮最多调一次。播完就停，不要重复播放
 
 放歌：只用 ncm_play。不要 cmd_help/cmd_run。不要拼 URL。中文日文混用时只传歌名，别粘乐队名。
 
@@ -268,7 +270,7 @@ def _rephrase_with_persona(worker_text: str) -> str:
                 {"role": "system", "content": persona_prompt},
                 {"role": "user", "content": f"用你的语气重新说下面的话，只输出新版本：\n\n{worker_text}"},
             ],
-            max_tokens=256,
+            max_tokens=512,
             stream=True,
             timeout=30,
         )

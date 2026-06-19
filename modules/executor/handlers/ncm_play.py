@@ -24,6 +24,12 @@ class NcmPlayHandler(ToolHandler):
         }
 
     def execute(self, tool_input: dict) -> ToolResult:
+        try:
+            return self._do_execute(tool_input)
+        except Exception as e:
+            return ToolResult.fail(f"ncm_play crashed: {e}", "crash")
+
+    def _do_execute(self, tool_input: dict) -> ToolResult:
         query = tool_input["query"]
         original_query = query
 
@@ -44,6 +50,7 @@ class NcmPlayHandler(ToolHandler):
 
         # song_map 返回了 URL → 直接播放，不搜 API（用户手动确认过的）
         if exact_url:
+            _kill_netease()
             subprocess.run(f'cmd /c start "" "{exact_url}"', shell=True, timeout=10)
             return ToolResult.success(f"playing: {exact_url}")
 
@@ -51,6 +58,7 @@ class NcmPlayHandler(ToolHandler):
         if original_query.startswith("http"):
             m = re.search(r'music\.163\.com/song\?id=(\d+)', original_query)
             if m:
+                _kill_netease()
                 music_url = f"https://music.163.com/song?id={m.group(1)}"
                 subprocess.run(f'cmd /c start "" "{music_url}"', shell=True, timeout=10)
                 return ToolResult.success(f"playing: {music_url}")
@@ -114,6 +122,7 @@ def _try_search(query: str) -> ToolResult | None:
         oid = song.get("id", "")
         if oid:
             music_url = f"https://music.163.com/song?id={oid}"
+            _kill_netease()
             subprocess.run(f'cmd /c start "" "{music_url}"', shell=True, timeout=10)
             return ToolResult.success(f"playing: {name} - {artists} ({music_url})")
 
@@ -144,3 +153,12 @@ def _build_queries(query: str) -> list[str]:
         results.append(plain)
 
     return results[:3]
+
+
+def _kill_netease():
+    """杀掉网易云进程，解决网页桥接失效问题"""
+    try:
+        import subprocess
+        subprocess.run('taskkill /f /im cloudmusic.exe 2>nul', shell=True, timeout=5)
+    except Exception:
+        pass
