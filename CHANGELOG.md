@@ -1,5 +1,64 @@
 # 更新日志
 
+## v0.7.0 — 2026-06-19（架构重构 + 工程化 + 管理面板）
+
+### 架构重构
+- agent.py: 1026→532 行，死代码清零，拆分为 core/ (format_convert, conversation, backend)
+- server.py: 570→387 行，HTML 外提至 templates/
+- 新增 config.py 集中配置
+
+### 三模型智能路由
+- ModelPool 多后端池 + 智能路由（简单→Qwen, 复杂→DS, 润色→GLM）
+- 故障转移：主模型挂了自动切备用
+- 路由可见性 + 音乐意图优先
+
+### System Prompt 分离
+- Worker Prompt: 执行纪律 + 工具规则 + constraint 规则 + 记忆
+- Persona Prompt: Lain 人设 + behavior 规则 + 记忆
+- Memory target: both/worker/persona
+- 筛选层 _filter_worker_output: 自动砍客服腔/emoji
+
+### RECOVERY 工程化
+- RECOVERY 字典：low_match/file_not_found/no_matches/timeout → 针对性恢复
+- POST_TOOL_HINTS: web_search 后强制 web_fetch, cmd_help 后拦截 cmd_run
+- 任务完成检查：用户要放歌但 ncm_play 没调 → 强制推回
+- 工具验证器: ncm_play/web_search/read_file/write_file 结果验证
+
+### 点歌全链路
+- song_map.db 独立存储（三级匹配：精确→子串→CJK模糊）
+- ncm_play: 查询净化 + 自动多试 + URL 直通 + 恢复链自动存映射
+- URL 映射精确直达，不走 API 搜索
+
+### 记忆 + 权限
+- save_rule 卸掉写权限（Admin 面板手动写）
+- save_memory 关键词触发（说"记住"才真写）
+- temp_rule: 对话内临时规则，会话结束忘
+
+### 新工具 (5个)
+- `move_file`: 移动/重命名
+- `window_list / window_minimize / window_restore`: 窗口管理
+- `quick_note`: 快捷备忘
+- `system_status`: CPU/内存/磁盘/电池
+
+### Admin 面板
+- admin_server.py: 独立 Web 管理 (端口 8900)
+- 蓝白 UI: Profile / Worker Rules / Persona Rules / Memories / Song Maps
+- 完整 CRUD + 增删改查可视化
+
+### 对话持久化修复
+- DB 加 metadata 列存 tool_calls
+- 对话恢复不丢工具调用记录
+
+### 测试
+- 37 个测试: ToolResult / 格式转换 / RECOVERY / Handler
+
+### 数据
+- 新增 2664 行，删除 978 行
+- 35 个文件变更
+- 24 个工具，23 个工具 (save_rule 卸掉)
+
+---
+
 ## v0.3.0 — 2026-06-17（CLI 注册表 + 网易云接入）
 
 ### 新增

@@ -12,6 +12,7 @@ from .cmd_tools import CmdHelpHandler, CmdRunHandler
 from .temp_rule import TempRuleHandler
 from .move_file import MoveFileHandler
 from .window import WindowListHandler, WindowMinimizeHandler
+from .window_restore import WindowRestoreHandler
 from .note import QuickNoteHandler
 from .system_status import SystemStatusHandler
 from .ncm_play import NcmPlayHandler
@@ -26,7 +27,7 @@ ALL_HANDLERS = [
     CmdHelpHandler, CmdRunHandler,
     TempRuleHandler,
     MoveFileHandler,
-    WindowListHandler, WindowMinimizeHandler,
+    WindowListHandler, WindowMinimizeHandler, WindowRestoreHandler,
     QuickNoteHandler,
     SystemStatusHandler,
     NcmPlayHandler,
