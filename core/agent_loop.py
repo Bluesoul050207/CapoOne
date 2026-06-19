@@ -264,6 +264,11 @@ async def run_turn(
             conv.trim()
             continue  # 纯管理操作，跳过反思，不占迭代
 
+        # ---- ncm_play 低匹配后不要重复同一 query ----
+        ncm_fails = [(tc.get("input",{}).get("query",""), tc.get("id","")) for tc in anthropic_tcs if tc["name"]=="ncm_play"]
+        if len(ncm_fails) >= 2 and ncm_fails[0][0] == ncm_fails[-1][0]:
+            conv.messages.append({"role":"user","content":f"ncm_play('{ncm_fails[0][0]}') 已失败过。换 web_search 找到的正确名字再试，不要重复同一 query。"})
+
         # ---- ncm_play 防双开：本轮已播过 → 提醒不要再播 ----
         ncm_count = sum(1 for tc in anthropic_tcs if tc["name"] == "ncm_play")
         if ncm_count > 1 and "ncm_play" in tools_used:
