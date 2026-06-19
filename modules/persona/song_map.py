@@ -68,13 +68,19 @@ class SongMapDB:
         if exact:
             return exact
 
-        # 2. 子串包含
+        # 2. 子串包含 — 优先最长 key 匹配（更精确）
         rows = self.conn.execute("SELECT key, value FROM mappings").fetchall()
+        best_len = 0
+        best_val = None
         for r in rows:
             k = r["key"].lower()
             ql = q.lower()
             if k in ql or ql in k:
-                return r["value"]
+                if len(k) > best_len:
+                    best_len = len(k)
+                    best_val = r["value"]
+        if best_val:
+            return best_val
 
         # 3. CJK 模糊（字符重合度）
         qchars = set(q.replace(" ", "").lower())

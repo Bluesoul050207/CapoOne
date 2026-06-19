@@ -82,9 +82,15 @@ class NcmPlayHandler(ToolHandler):
     def validate(self, tool_input: dict, result: "ToolResult") -> tuple[bool, str]:
         query = tool_input.get("query", "")
         text = result.text
+        # URL 直通 → 不验证，用户手动确认过的
+        if "http" in text.split("(")[-1] if "(" in text else "":
+            return True, ""
         if text.startswith("playing:"):
             song_part = text[8:].split("(")[0].strip()
             song_name = song_part.split(" - ")[0].strip()
+            # URL 当歌名 → 跳过
+            if song_name.startswith("http"):
+                return True, ""
             qchars = set(query.replace(" ", ""))
             schars = set(song_name.replace(" ", ""))
             if qchars and schars:
@@ -157,16 +163,15 @@ def _build_queries(query: str) -> list[str]:
 
 def _restart_netease():
     """杀网易云 → 重开 → 等启动，解决网页桥接失效"""
-    import time
+    import time, os
     try:
-        # 1. 杀
-        subprocess.run('taskkill /f /im cloudmusic.exe 2>nul', shell=True, timeout=5)
+        subprocess.run('taskkill /f /im cloudmusic.exe 2>nul', shell=True,
+                       timeout=5, capture_output=True)
         time.sleep(0.5)
-        # 2. 开
         netease_path = r"D:\MusicCloudYI\CloudMusic\cloudmusic.exe"
-        import os
         if os.path.exists(netease_path):
-            subprocess.Popen(f'cmd /c start "" "{netease_path}"', shell=True)
-            time.sleep(2)  # 等它启动完
+            subprocess.Popen(f'cmd /c start "" "{netease_path}"', shell=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(2)
     except Exception:
         pass
