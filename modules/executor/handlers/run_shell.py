@@ -1,5 +1,6 @@
 import subprocess
 from .base import ToolHandler
+from ..tool_result import ToolResult
 
 DANGEROUS_COMMANDS = ["rm -rf", "del /f", "format", "shutdown", "restart", "reg delete", ":(){ :|:& };:"]
 
@@ -25,7 +26,7 @@ class RunShellHandler(ToolHandler):
                 return True, f"DANGEROUS: {tool_input['command'][:80]}"
         return False, ""
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         command = tool_input["command"]
 
         try:
@@ -39,8 +40,11 @@ class RunShellHandler(ToolHandler):
                 output += f"\n[stderr]\n{result.stderr}"
             if result.returncode != 0:
                 output += f"\n[exit: {result.returncode}]"
-            return output[:8000] or "(no output)"
+            # exit != 0 视为失败
+            if result.returncode != 0:
+                return ToolResult.fail(output[:8000] or "(no output)", "command_failed")
+            return ToolResult.success(output[:8000] or "(no output)")
         except subprocess.TimeoutExpired:
-            return "error: command timed out (30s)"
+            return ToolResult.fail("error: command timed out (30s)", "timeout")
         except Exception as e:
-            return f"error: {e}"
+            return ToolResult.fail(f"shell error: {e}", "shell_error")

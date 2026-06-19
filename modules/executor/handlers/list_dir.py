@@ -3,6 +3,7 @@ import fnmatch
 from pathlib import Path
 from datetime import datetime
 from .base import ToolHandler
+from ..tool_result import ToolResult
 
 
 class ListDirHandler(ToolHandler):
@@ -19,7 +20,7 @@ class ListDirHandler(ToolHandler):
             "required": [],
         }
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         path = tool_input.get("path", os.getcwd())
         pattern = tool_input.get("pattern", "*")
 
@@ -39,6 +40,10 @@ class ListDirHandler(ToolHandler):
                     mtime = "?"
                 name = f"{e.name}/" if e.is_dir() else e.name
                 lines.append(f"{tag} {name}  ({size:>8,} bytes, {mtime})")
-            return "\n".join(lines) if lines else "(empty)"
+            return ToolResult.success("\n".join(lines) if lines else "(empty)")
+        except FileNotFoundError:
+            return ToolResult.fail(f"directory not found: {path}", "file_not_found")
+        except PermissionError:
+            return ToolResult.fail(f"permission denied: {path}", "access_denied")
         except Exception as e:
-            return f"error: {e}"
+            return ToolResult.fail(f"list error: {e}", "list_error")

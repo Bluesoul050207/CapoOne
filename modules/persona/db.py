@@ -169,6 +169,28 @@ class PersonaDB:
         self.conn.close()
 
 
+# ---- 共享记忆查询 ----
+
+def lookup_memory(query: str) -> str | None:
+    """在 persona.db 中查找与 query 最匹配的记忆值。
+    优先精确 key 匹配 → 子串匹配。
+    返回匹配的值，没有则返回 None。
+    """
+    try:
+        db = PersonaDB()
+        mems = db.get_all_memories()
+        best = None
+        for m in mems:
+            if m["key"] == query:
+                return m["value"]
+            if m["key"] in query or query in m["key"]:
+                if best is None:
+                    best = m["value"]
+        return best
+    except Exception:
+        return None
+
+
 # ---- 默认初始化 ----
 
 def init_default_rules(db: PersonaDB):

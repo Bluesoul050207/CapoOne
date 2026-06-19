@@ -4,9 +4,10 @@
 
 ## 项目概况
 
-- 5 天开发，1030 行 agent.py + 569 行 server.py + 核心模块
-- 18 个工具，模块化架构，双模型，反思循环
+- 5 天开发，484 行 agent.py + 385 行 server.py + 核心模块（2026-06-19 优化后）
+- 18 个工具 + RECOVERY 错误恢复 + 记忆层已启用 + 37 个测试
 - GitHub: Bluesoul050207/CapoOne (main 分支)
+- **上次优化**: Phase 1-7 完成，详见下文"优化记录"
 
 ## 入口
 
@@ -59,37 +60,50 @@ python modules/persona/editor.py  人格编辑器
 ## 当前遇到的问题
 
 1. **模型链式推理上限** — Qwen 走 1-2 步就停，DS 能走 3-4 步但偶尔偷懒
-2. **找到不动手** — AI web_search 查到正确原名后忘了调 ncm_play 播放
+2. ~~**找到不动手**~~ — ✅ RECOVERY 字典已实现，错误标签路由自动注入下一步指令
 3. **没眼** — 没有多模态模型同时看图+调工具+便宜
-4. **模型中转缓** — 有 write_file 不调 press_keys
-5. **记忆打架** — 多条同义词记忆互相覆盖 (记忆层已暂关)
+4. **模型中转缓** — 有 write_file 不调 press_keys（非 Agent 问题，是操作系统限制）
+5. ~~**记忆打架**~~ — ✅ save_memory 已有冲突检测（追加而非覆盖），ncm_play 记忆查询已启用
 6. **网易云限制** — ncm-cli 播放仅 Mac，Win 只能网页桥接
+7. **并发安全** — WebSocket 确认期间用户的并发消息可能被误消费
 
-## 待实现: 任务队列 (下次打开第一件事)
+## 优化记录 (2026-06-19)
 
-核心思路: 工具失败后，代码根据失败标签自动注入下一步指令，不让 AI 自己想。
+### 已完成 ✅
+| Phase | 内容 | 效果 |
+|-------|------|------|
+| 1 | 删除死代码 (~230行) | agent.py 1026→484 行 |
+| 2 | RECOVERY 字典 + 错误标签路由 | 7 个错误标签 → 针对性恢复指令 |
+| 3 | 18 个 handler 统一返回 ToolResult | 错误标签不再丢失 |
+| 4 | HTML 模板外提 | server.py 570→385 行，前端可独立编辑 |
+| 5 | agent.py 拆分为 core/ | format_convert / conversation / backend 三模块 |
+| 6 | 记忆层重新启用 | lookup_memory() + 冲突检测 |
+| 7 | 基础测试 37 个 | ToolResult/格式转换/RECOVERY/handler 全覆盖 |
 
-agent_loop.py 加字典:
-```python
-RECOVERY = {
-    "low_match": "web_search查原名 → ncm_play播放。只调工具不解释。",
-    "file_not_found": "list_directory找文件 → 找到重读。",
-    "no_matches": "扩大范围或缩短关键词重试。",
-}
+### 新增文件结构
+```
+core/
+├── format_convert.py   ← Anthropic↔OpenAI 格式转换
+├── conversation.py     ← Conversation 类 + token 计数
+├── backend.py          ← LLM 后端检测 + 客户端创建
+├── agent_loop.py       ← RECOVERY 字典 + 错误标签路由
+templates/
+├── index.html          ← 手机端 Web UI
+tests/
+├── test_tool_result.py
+├── test_format_convert.py
+├── test_recovery.py
+├── test_handlers.py
 ```
 
-失败时 match 到标签 → 自动注入对应指令 → AI 没得选只能执行。
-没 match 到 → 直接问用户"这个失败了，怎么处理？"
-你教一次 → 自动存为新恢复路线。
+## 待实现
 
-配合 DS: 只有"执行"没有"规划"，DS 没机会偷懒。
-
-## 其他待做
-
-- 任务队列 (最高优)
+- ~~任务队列 (最高优)~~ → ✅ 已实现为 RECOVERY 字典
 - 工具执行验证器 (ok=true 但结果不对→自动标失败)
-- 记忆冲突检测 (写前查旧)
-- 记忆层重新开启 (等冲突解决后)
+- 记忆冲突合并策略 (目前追加，未来可做语义去重)
+- ncm-cli 原生播放 (需要 Mac 或找 Win 替代方案)
+- WebSocket 并发安全修复
+- 多模态视觉模型接入
 
 ## 关键文件
 

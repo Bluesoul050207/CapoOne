@@ -5,6 +5,7 @@ web_search / web_fetch — Tavily 搜索 + 网页抓取
 import os, urllib.request, urllib.error
 from html import unescape
 from .base import ToolHandler
+from ..tool_result import ToolResult
 
 
 class WebSearchHandler(ToolHandler):
@@ -18,13 +19,13 @@ class WebSearchHandler(ToolHandler):
             "required": ["query"],
         }
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         query = tool_input["query"]
         try:
             from tavily import TavilyClient
             key = os.environ.get("TAVILY_API_KEY", "")
             if not key:
-                return "Tavily API key not set. Set TAVILY_API_KEY env var."
+                return ToolResult.fail("Tavily API key not set. Set TAVILY_API_KEY env var.", "no_api_key")
 
             client = TavilyClient(api_key=key)
             r = client.search(query, max_results=5, include_raw_content=False)
@@ -40,9 +41,11 @@ class WebSearchHandler(ToolHandler):
             if answer:
                 results.insert(0, f"[Tavily Answer] {answer}")
 
-            return "\n\n".join(results) if results else f"no results: {query}"
+            if results:
+                return ToolResult.success("\n\n".join(results))
+            return ToolResult.fail(f"no results for: {query}", "no_matches")
         except Exception as e:
-            return f"search error: {e}"
+            return ToolResult.fail(f"search error: {e}", "search_error")
 
 
 class WebFetchHandler(ToolHandler):
@@ -56,7 +59,7 @@ class WebFetchHandler(ToolHandler):
             "required": ["url"],
         }
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         url = tool_input["url"]
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -76,8 +79,8 @@ class WebFetchHandler(ToolHandler):
             text = re.sub(r'\s+', ' ', text).strip()
             if len(text) > 3000:
                 text = text[:3000] + "\n... (truncated)"
-            return text or "(empty)"
+            return ToolResult.success(text or "(empty)")
         except urllib.error.URLError as e:
-            return f"fetch failed: {e}"
+            return ToolResult.fail(f"fetch failed: {e}", "fetch_error")
         except Exception as e:
-            return f"fetch error: {e}"
+            return ToolResult.fail(f"fetch error: {e}", "fetch_error")

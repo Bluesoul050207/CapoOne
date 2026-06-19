@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>agent v2.3</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:14px/1.5 Consolas,monospace;background:#0d0d0d;color:#c0c0c0;height:100dvh;display:flex;flex-direction:column}
+header{display:flex;background:#1a1a1a;border-bottom:1px solid #333}
+header button{flex:1;padding:10px;background:none;color:#888;border:none;font:inherit;cursor:pointer}
+header button.on{color:#fff;border-bottom:2px solid #5af}
+#chat,#shell{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column}
+#shell{display:none}
+#chatMsgs{flex:1;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+#shellOutput{flex:1;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.inputRow{display:flex;margin-top:8px;gap:6px}
+.inputRow input{flex:1;padding:8px;background:#1a1a1a;color:#c0c0c0;border:1px solid #333;font:inherit;outline:none}
+.inputRow input:focus{border-color:#5af}
+.inputRow button{padding:8px 14px;background:#2a2a2a;color:#c0c0c0;border:1px solid #444;font:inherit;cursor:pointer}
+.inputRow button:active{background:#444}
+.role{color:#888}
+.msg{color:#c0c0c0}
+.tool{color:#aaa}
+.cwd{color:#555;font-size:12px;padding:4px 0}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#0d0d0d}
+::-webkit-scrollbar-thumb{background:#333}
+</style>
+</head>
+<body>
+<header>
+  <button id="tabChat" class="on" onclick="switchTab('chat')">chat</button>
+  <button id="tabShell" onclick="switchTab('shell')">shell</button>
+  <button onclick="killServer()" style="margin-left:auto;color:#f66">clear</button>
+</header>
+
+<div id="chat">
+  <div id="chatMsgs"></div>
+  <div class="inputRow">
+    <input id="chatInput" placeholder="say something..." autofocus onkeydown="if(event.key==='Enter')sendChat()">
+    <button id="sendBtn" onclick="sendChat()">send</button>
+    <button id="cancelBtn" onclick="doCancel()" style="display:none;color:#f66">cancel</button>
+  </div>
+</div>
+
+<div id="shell">
+  <div id="shellOutput"></div>
+  <div class="cwd" id="shellCwd">loading...</div>
+  <div class="inputRow">
+    <input id="shellInput" placeholder="powershell command..." onkeydown="if(event.key==='Enter')sendShell()">
+    <button onclick="sendShell()">run</button>
+  </div>
+</div>
+
+<script>
+const SESSION = Date.now().toString(36);
+let currentBlock = null;
+let shellCwd = '.';
+
+// ---- WebSocket ----
+const ws = new WebSocket(`ws://${location.host}/ws/${SESSION}`);
+let wsReady = false;
+
+ws.onopen = () => { wsReady = true; appendMsg('tool', 'connected'); };
+ws.onclose = () => { wsReady = false; appendMsg('tool', 'disconnected, refresh page'); };
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  const t = msg.type;
+  if(t === 'echo') { currentBlock = null; appendMsg('role', '> ' + msg.text); }
+  else if(t === 'text') { if(!currentBlock){currentBlock=document.createElement('div');currentBlock.className='msg';document.getElementById('chatMsgs').appendChild(currentBlock);} currentBlock.textContent+=msg.text; }
+  else if(t === 'tool'||t === 'tool_result'||t === 'status') { currentBlock=null; appendMsg('tool', (t==='status'?'... ':'') + msg.text); }
+  else if(t === 'confirm_needed') { currentBlock=null; appendMsg('tool','[confirm] '+msg.text); appendMsg('tool','reply y/n:'); const ci=document.getElementById('chatInput'); ci.disabled=false; ci.placeholder='y/n'; ci.value=''; ci.focus(); ci.dataset.confirm=msg.text; document.getElementById('sendBtn').style.display=''; document.getElementById('cancelBtn').style.display='none'; }
+  else if(t === 'error') { currentBlock=null; appendMsg('tool','error: '+msg.text); }
+  else if(t === 'done') { currentBlock=null; document.getElementById('sendBtn').style.display=''; document.getElementById('cancelBtn').style.display='none'; document.getElementById('chatInput').disabled=false; document.getElementById('chatInput').focus(); }
+  else if(t === 'connected') { /* ignore */ }
+  document.getElementById('chatMsgs').scrollTop = document.getElementById('chatMsgs').scrollHeight;
+};
+
+async function doCancel() {
+  ws.send(JSON.stringify({type:'cancel'}));
+  document.getElementById('chatMsgs').textContent = '';
+  document.getElementById('sendBtn').style.display = '';
+  document.getElementById('cancelBtn').style.display = 'none';
+  document.getElementById('chatInput').disabled = false;
+}
+
+function switchTab(t) {
+  document.getElementById('chat').style.display = t==='chat' ? 'flex' : 'none';
+  document.getElementById('shell').style.display = t==='shell' ? 'flex' : 'none';
+  document.getElementById('tabChat').classList.toggle('on', t==='chat');
+  document.getElementById('tabShell').classList.toggle('on', t==='shell');
+  if(t==='chat') document.getElementById('chatInput').focus();
+  if(t==='shell') document.getElementById('shellInput').focus();
+}
+
+function appendMsg(type, text) {
+  const el = document.createElement('div');
+  el.className = type;
+  el.textContent = text;
+  document.getElementById('chatMsgs').appendChild(el);
+  document.getElementById('chatMsgs').scrollTop = document.getElementById('chatMsgs').scrollHeight;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text) return;
+
+  // 确认模式
+  if(input.dataset.confirm) {
+    const approved = /^(y|yes|是)$/i.test(text);
+    input.dataset.confirm = '';
+    input.placeholder = 'say something...';
+    input.value = '';
+    input.disabled = false;
+    ws.send(JSON.stringify({type:'confirm', approved}));
+    return;
+  }
+
+  input.value = '';
+  input.disabled = true;
+  document.getElementById('sendBtn').style.display = 'none';
+  document.getElementById('cancelBtn').style.display = '';
+  currentBlock = null;
+
+  ws.send(JSON.stringify({type:'chat', text}));
+}
+
+async function sendShell() {
+  const input = document.getElementById('shellInput');
+  const cmd = input.value.trim();
+  if(!cmd) return;
+  input.value = '';
+  const out = document.getElementById('shellOutput');
+  out.textContent += shellCwd + '> ' + cmd + '\n';
+
+  const resp = await fetch('/shell', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cmd, cwd: shellCwd})
+  });
+  const data = await resp.json();
+  out.textContent += data.output + '\n';
+  out.scrollTop = out.scrollHeight;
+  if(data.cwd) {
+    shellCwd = data.cwd;
+    document.getElementById('shellCwd').textContent = 'cwd: ' + shellCwd;
+  }
+}
+
+// kill server
+async function killServer() {
+  if(!confirm('clear all sessions?')) return;
+  ws.send(JSON.stringify({type:'cancel'}));
+  await fetch('/kill', {method:'POST'});
+  alert('done');
+  location.reload();
+  let tries = 0;
+  const check = setInterval(async () => {
+    try {
+      const r = await fetch('/ping');
+      if(r.ok) location.reload();
+    } catch(e) {}
+    tries++;
+    if(tries > 60) { clearInterval(check); document.getElementById('retry').textContent = 'giving up. restart manually.'; }
+  }, 3000);
+}
+
+// init shell cwd
+fetch('/shell', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({cmd:'pwd',cwd:'.'})})
+  .then(r=>r.json()).then(d=>{
+    if(d.cwd) { shellCwd = d.cwd; document.getElementById('shellCwd').textContent = 'cwd: ' + shellCwd; }
+  });
+</script>
+</body>
+</html>

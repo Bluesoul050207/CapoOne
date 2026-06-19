@@ -13,6 +13,44 @@ from agent import (
 )
 
 
+# ============================================================
+# RECOVERY 字典 — 工具失败时根据错误标签自动注入恢复指令
+# 不用 AI 自己想，直接告诉它下一步该做什么
+# ============================================================
+
+RECOVERY = {
+    "low_match": (
+        "用 web_search 查这首歌的原名/英文名 → 查到后立刻调 ncm_play 播放。"
+        "只调工具不解释，不要说你找到了但不动手。"
+    ),
+    "file_not_found": (
+        "文件没找到。用 list_directory 在附近目录找 → 找到后重读。"
+        "如果还找不到就直接告诉用户文件不存在。"
+    ),
+    "no_matches": "没搜到结果。扩大搜索范围或缩短关键词重试。",
+    "access_denied": "权限不够。换个路径或方式再试。如果确实不行就告诉用户需要管理员权限。",
+    "unknown_tool": "这个工具不存在。用 cmd_help 看可用工具列表，选一个替代方案。",
+    "timeout": "命令超时了。简化操作或拆成小步骤再试。",
+    "not_found": "没找到目标。检查一下参数是否正确，或者换个搜索方式。",
+}
+
+# 当 RECOVERY 没匹配到且是连续失败时，注入这条通用反思
+FALLBACK_RECOVERY = "上一步失败了。用其他方法再试一次，换工具、换参数、换顺序都行。"
+
+
+def _get_recovery(error_tag: str) -> str | None:
+    """根据错误标签返回针对性恢复指令。精确匹配优先，再尝试子串匹配。"""
+    if not error_tag:
+        return None
+    tag = error_tag.lower().strip()
+    if tag in RECOVERY:
+        return RECOVERY[tag]
+    for key, val in RECOVERY.items():
+        if key in tag:
+            return val
+    return None
+
+
 async def run_turn(
     conv,
     client,
@@ -111,6 +149,7 @@ async def run_turn(
         conv.add_assistant_message(assistant_text, tool_calls=anthropic_tcs)
         tool_results = []
         had_failure = False
+        error_tags: list[str] = []  # 收集所有失败的错误标签
 
         for tc in anthropic_tcs:
             name, inp = tc["name"], tc.get("input", {})
@@ -135,24 +174,48 @@ async def run_turn(
             tool_results.append({"type": "tool_result", "tool_use_id": tc["id"], "content": result_text})
             if not tr.ok:
                 had_failure = True
+                if tr.error:
+                    error_tags.append(tr.error)
 
         conv.messages.append({"role": "user", "content": tool_results})
 
-        # 自反思 + 记忆
+        # ---- 反思注入：基于错误标签的智能恢复 ----
         if had_failure:
-            if iteration < 3:
-                conv.messages.append({"role": "user", "content": "失败了。换方法。搜到正确的就立刻调工具执行，别光说找到了。"})
+            # 1. 先尝试用 RECOVERY 字典匹配针对性恢复指令
+            recovery_msgs: list[str] = []
+            for err_tag in error_tags:
+                rec = _get_recovery(err_tag)
+                if rec and rec not in recovery_msgs:
+                    recovery_msgs.append(rec)
+
+            if recovery_msgs:
+                # 有针对性恢复指令 → 注入
+                injection = "上一步失败的修复方案：" + " ".join(recovery_msgs)
+                conv.messages.append({"role": "user", "content": injection})
+            elif iteration < 3:
+                # 没有匹配的恢复指令 → 通用反思
+                conv.messages.append({"role": "user", "content": FALLBACK_RECOVERY})
+            else:
+                # 第4轮还在失败 → 问用户
+                conv.messages.append({"role": "user", "content": "连续失败多次。告诉用户发生了什么，让用户决定下一步。"})
             prev_failure = True
         else:
+            # 工具成功
             if prev_failure:
-                conv.messages.append({"role": "user", "content": "绕弯路成功了。先继续完成用户请求（播放/搜索），再调save_memory记下这次的经验。"})
+                # 上次失败这次成功 → 鼓励记经验
+                conv.messages.append({
+                    "role": "user",
+                    "content": "这次成功了。先继续完成用户请求（播放/打开/搜索），完成后用 save_memory 或 save_rule 记下这次的经验教训。"
+                })
                 prev_failure = False
-            elif iteration >= 2:
-                conv.messages.append({"role": "user", "content": "这一步够吗？不够就扩大范围再试。"})
+            elif iteration >= 3:
+                # 多轮工具调用后还没结束 → 推一把
+                conv.messages.append({
+                    "role": "user",
+                    "content": "已经调用多次工具了。该给用户一个结论了——总结你找到的信息，不要继续搜索。"
+                })
 
         conv.trim()
 
     emit("error", "max tool iterations")
     return events
-
-

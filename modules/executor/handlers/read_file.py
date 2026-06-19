@@ -1,4 +1,5 @@
 from .base import ToolHandler
+from ..tool_result import ToolResult
 
 
 class ReadFileHandler(ToolHandler):
@@ -16,7 +17,7 @@ class ReadFileHandler(ToolHandler):
             "required": ["file_path"],
         }
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         file_path = tool_input["file_path"]
         offset = int(tool_input.get("offset", 0))
         limit = int(tool_input.get("limit", 100))
@@ -29,10 +30,10 @@ class ReadFileHandler(ToolHandler):
             result = "".join(f"{offset + i + 1:4d}| {line}" for i, line in enumerate(selected))
             if offset + limit < total:
                 result += f"\n... ({total - offset - limit} more lines)"
-            return result or "(empty)"
+            return ToolResult.success(result or "(empty)")
         except FileNotFoundError:
-            return f"file not found: {file_path}"
+            return ToolResult.fail(f"file not found: {file_path}", "file_not_found")
         except PermissionError:
-            return f"permission denied: {file_path}"
+            return ToolResult.fail(f"permission denied: {file_path}", "access_denied")
         except Exception as e:
-            return f"error: {e}"
+            return ToolResult.fail(f"read error: {e}", "read_error")

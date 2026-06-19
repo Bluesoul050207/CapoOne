@@ -2,6 +2,7 @@ import os
 import re
 import fnmatch
 from .base import ToolHandler
+from ..tool_result import ToolResult
 
 
 class SearchHandler(ToolHandler):
@@ -19,7 +20,7 @@ class SearchHandler(ToolHandler):
             "required": ["pattern", "directory"],
         }
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         pattern = tool_input["pattern"]
         directory = tool_input["directory"]
         file_pattern = tool_input.get("file_pattern", "*")
@@ -45,6 +46,10 @@ class SearchHandler(ToolHandler):
                         continue
                     if len(matches) > 50:
                         break
-            return "\n".join(matches) if matches else f"no matches for '{pattern}'"
+            if matches:
+                return ToolResult.success("\n".join(matches))
+            return ToolResult.fail(f"no matches for '{pattern}'", "no_matches")
+        except FileNotFoundError:
+            return ToolResult.fail(f"directory not found: {directory}", "file_not_found")
         except Exception as e:
-            return f"search error: {e}"
+            return ToolResult.fail(f"search error: {e}", "search_error")

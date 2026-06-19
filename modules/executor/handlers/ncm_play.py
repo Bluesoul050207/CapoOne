@@ -25,25 +25,14 @@ class NcmPlayHandler(ToolHandler):
     def execute(self, tool_input: dict) -> ToolResult:
         query = tool_input["query"]
 
-        # 记忆层已暂关。以后手动写入映射后再打开。
-        _MEMORY_ENABLED = False
-        if _MEMORY_ENABLED:
-            try:
-                from modules.persona.db import PersonaDB
-                db = PersonaDB()
-                mems = db.get_all_memories()
-                best = None
-                for m in mems:
-                    if m["key"] == query:
-                        best = m["value"]
-                        break
-                    if m["key"] in query or query in m["key"]:
-                        if best is None:
-                            best = m["value"]
-                if best and best.strip() != query and len(best.strip()) < 200:
-                    query = best.strip().split("\n")[0]
-            except Exception:
-                pass
+        # 记忆查询：查 persona.db 中是否有歌名映射
+        try:
+            from modules.persona.db import lookup_memory
+            cached = lookup_memory(query)
+            if cached and cached.strip() != query and len(cached.strip()) < 200:
+                query = cached.strip().split("\n")[0]
+        except Exception:
+            pass
 
         # 1. 搜索 — 网易云公开搜索API
         try:

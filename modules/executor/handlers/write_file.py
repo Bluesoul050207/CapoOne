@@ -1,5 +1,6 @@
 from pathlib import Path
 from .base import ToolHandler
+from ..tool_result import ToolResult
 
 
 class WriteFileHandler(ToolHandler):
@@ -19,7 +20,7 @@ class WriteFileHandler(ToolHandler):
     def needs_confirm(self, tool_input: dict) -> tuple[bool, str]:
         return True, f"write: {tool_input.get('file_path', '?')}"
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         file_path = tool_input["file_path"]
         content = tool_input["content"]
 
@@ -27,6 +28,8 @@ class WriteFileHandler(ToolHandler):
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            return f"wrote {file_path} ({len(content)} chars)"
+            return ToolResult.success(f"wrote {file_path} ({len(content)} chars)")
+        except PermissionError:
+            return ToolResult.fail(f"write permission denied: {file_path}", "access_denied")
         except Exception as e:
-            return f"write failed: {e}"
+            return ToolResult.fail(f"write failed: {e}", "write_error")

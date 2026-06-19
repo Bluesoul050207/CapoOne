@@ -6,6 +6,7 @@ Lain 听到"以后……"时主动调用，写入 persona.db 永久生效
 import sys, os
 from pathlib import Path
 from .base import ToolHandler
+from ..tool_result import ToolResult
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from modules.persona.db import PersonaDB
@@ -25,12 +26,20 @@ class SaveRuleHandler(ToolHandler):
             "required": ["content"],
         }
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         content = tool_input["content"]
         rule_type = tool_input.get("rule_type", "behavior")
-        db = PersonaDB()
-        rid = db.add_rule(content, rule_type, 5)
-        return f"rule #{rid} saved: {content}"
+        try:
+            db = PersonaDB()
+            # 冲突检测：查重已有规则
+            existing = db.get_rules(enabled_only=False)
+            for r in existing:
+                if content.strip() == r["content"].strip():
+                    return ToolResult.success(f"rule already exists as #{r['id']}: {content}")
+            rid = db.add_rule(content, rule_type, 5)
+            return ToolResult.success(f"rule #{rid} saved: {content}")
+        except Exception as e:
+            return ToolResult.fail(f"save_rule failed: {e}", "db_error")
 
 
 class SaveMemoryHandler(ToolHandler):
@@ -47,9 +56,20 @@ class SaveMemoryHandler(ToolHandler):
             "required": ["key", "value"],
         }
 
-    def execute(self, tool_input: dict) -> str:
+    def execute(self, tool_input: dict) -> ToolResult:
         key = tool_input["key"]
         value = tool_input["value"]
-        db = PersonaDB()
-        db.set_memory(key, value)
-        return f"memory saved: {key} = {value}"
+        try:
+            db = PersonaDB()
+            # 冲突检测：key 已存在时追加而非覆盖
+            old = db.get_memory(key)
+            if old:
+                old_val = old["value"]
+                if value.strip() not in old_val:
+                    value = old_val + "\n" + value
+            db.set_memory(key, value)
+            if old:
+                return ToolResult.success(f"memory updated: {key}")
+            return ToolResult.success(f"memory saved: {key}")
+        except Exception as e:
+            return ToolResult.fail(f"save_memory failed: {e}", "db_error")
