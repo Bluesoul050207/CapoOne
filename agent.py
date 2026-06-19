@@ -32,6 +32,7 @@ from core.backend import (
     MODEL, MAX_HISTORY, DANGEROUS_COMMANDS,
     HAS_ANTHROPIC, HAS_OPENAI,
     detect_backend, get_client,
+    ModelPool,
 )
 
 SERVER_MODE = False  # server.py 会设成 True
@@ -57,9 +58,27 @@ def _init_registry():
     return _registry
 
 
+def _get_worker_prompt():
+    """Worker (DS/Qwen) system prompt：执行纪律 + 工具规则 + 工作约束"""
+    if _persona_enabled and _registry:
+        mod = _registry.get("persona")
+        if mod:
+            return mod.build_worker_prompt(SYSTEM_PROMPT)
+    return SYSTEM_PROMPT
+
+
+def _get_persona_prompt():
+    """Persona (GLM) system prompt：人设 + 行为风格 + 用户记忆"""
+    if _persona_enabled and _registry:
+        mod = _registry.get("persona")
+        if mod:
+            return mod.build_persona_prompt()
+    return ""
+
+
 def _get_system_prompt():
-    """生成 system prompt，人格开启时注入约束和记忆"""
-    base = """你是一个能直接操作电脑的搭档。说话像和同事聊天：直接、简短。做错认，不知道说不知道。"""
+    """兼容旧代码：合并版（不再用于核心流程，保留向后兼容）"""
+    base = "你是一个能直接操作电脑的搭档。说话像和同事聊天：直接、简短。做错认，不知道说不知道。"
     if _persona_enabled and _registry:
         return _registry.build_system_prompt(base)
     return base
@@ -87,6 +106,12 @@ def needs_confirm(tool_name: str, tool_input: dict) -> tuple[bool, str]:
         for d in DANGEROUS_COMMANDS:
             if d in cmd.lower():
                 return True, f"DANGEROUS: {cmd[:80]}"
+    if tool_name == "save_rule":
+        return True, f"save rule: {tool_input.get('content', '?')[:80]}"
+    if tool_name == "save_memory":
+        return True, f"save memory: {tool_input.get('key', '?')} = {tool_input.get('value', '?')[:60]}"
+    if tool_name == "process_kill":
+        return True, f"kill process: {tool_input.get('target', '?')}"
     return False, ""
 
 
@@ -158,13 +183,18 @@ def load_image(image_path: str) -> dict:
 # ============================================================
 
 # SYSTEM_PROMPT 改为动态生成（_get_system_prompt），保留兼容引用的默认值
-SYSTEM_PROMPT = """禁止使用任何emoji。你是直接干活的搭档，不是客服。说话直接、简短。做错认。自己动手。
+SYSTEM_PROMPT = """你是执行者，不是客服。收到任务立刻调工具，不停顿、不废话、不解释你要做什么。输出干净事实——不要加人设、不要加表情、不要加语气词。GLM 会帮你润色。
 
-搜歌规则：调ncm_play前先做两件事——①查save_memory有没有存过这个歌名的正确映射，上次用户纠正过就记住，直接用不重搜；②不确定是翻译就先web_search查原名。做完再ncm_play。
+执行纪律：
+- 任务没完成就继续调工具，不要半途说话总结
+- 工具失败换方法再试，不要放弃
+- 拿不准就搜，搜不到就试，试错比停着强
 
-上网查资料：搜1-2次 → 必须用web_fetch读最相关的页面全文 → 总结回答。不读全文不许回答。读完不够再搜。
+放歌：只用 ncm_play。不要 cmd_help/cmd_run。不要拼 URL。中文日文混用时只传歌名，别粘乐队名。
 
-有 save_rule 和 save_memory 可以永久记忆。绕弯路才完成的事，立刻存经验。用户纠正你，立刻存偏好。下次直接读记忆，不再绕。"""
+上网：搜完必须 web_fetch 读全文再回答。不读全文不许说话。
+
+记住：你只管干活。输出给 GLM 润色用的原料，不要自己演 Lain。"""
 
 # ---- 双模型 ----
 _glm_client = None
@@ -192,7 +222,7 @@ def _rephrase_with_persona(worker_text: str) -> str:
     if not worker_text or not worker_text.strip():
         return "嗯……我好像想不出该说什么。再问我一次吧。"
 
-    persona_prompt = _get_system_prompt() + "\n\n你的任务：把一段文字改成你的说话方式。只输出改写后版本，不保留原文。\n1. 砍掉\"有什么可以帮你的\"\"尽管问我\"这种客服话术\n2. 不主动列功能不介绍自己能做什么\n3. 用户问什么就答什么没问的别多说\n4. 绝不提AI助手模型文件系统命令行这些词\n5. 保持语气轻柔简短句尾带……呢吧\n6. 只输出改写后内容不要把原文也写出来"
+    persona_prompt = (_get_persona_prompt() or "你是岩仓铃音，14岁。说话轻柔简短。") + "\n\n你的任务：把一段文字改成你的说话方式。只输出改写后版本，不保留原文。\n1. 砍掉\"有什么可以帮你的\"\"尽管问我\"这种客服话术\n2. 不主动列功能不介绍自己能做什么\n3. 用户问什么就答什么没问的别多说\n4. 绝不提AI助手模型文件系统命令行这些词\n5. 保持语气轻柔简短句尾带……呢吧\n6. 只输出改写后内容不要把原文也写出来"
 
     try:
         r = _glm_client.chat.completions.create(
@@ -216,23 +246,8 @@ def _rephrase_with_persona(worker_text: str) -> str:
 
 
 def main():
-    # 检测后端
-    backend, reason = detect_backend()
-    if backend == "none":
-        print("agent: no backend available. set one of:")
-        print("  DEEPSEEK_API_KEY  (recommended)")
-        print("  ANTHROPIC_API_KEY")
-        print("  AI_BACKEND=deepseek|anthropic|openai")
-        sys.exit(1)
-
-    backend_client = get_client(backend)
-
-    model_display = os.environ.get("AI_MODEL") or {
-        "anthropic": MODEL,
-        "deepseek": "deepseek-chat",
-        "openai": "gpt-4o",
-        "qwen": "qwen-max",
-    }.get(backend, "unknown")
+    # 初始化模型池（按 API Key 自动发现所有可用模型）
+    pool = ModelPool()
 
     # 对话持久化
     from core.conversation_db import get_conv_db
@@ -257,19 +272,17 @@ def main():
         mod = reg.get(name)
         print(f"  [{name}] {mod.version}")
 
-    # 双模型：DeepSeek 干活 + GLM 说话
+    # 双模型：GLM 润色 Lain 人格
     if init_dual_model():
-        print(f"  [dual]  Worker: deepseek  |  Persona: glm-4-flash")
+        print(f"  [dual]  Persona: glm-4-flash")
 
-    print(f"backend  {backend} / {model_display}")
+    print(pool.status())
     print(f"persona  {'on' if _persona_enabled else 'off'}")
     print(f"cwd      {os.getcwd()}")
-    if backend == "deepseek":
-        print("note     image recognition not available")
     print("/help for commands, /exit to quit")
     print()
 
-    conv = Conversation(_get_system_prompt())
+    conv = Conversation(_get_worker_prompt())
 
     # 加载上次会话的历史消息（只取最近 16 条 + 加分隔线）
     all_msgs = conv_db.load_messages(current_sid)
@@ -284,21 +297,24 @@ def main():
     # 共享核心循环
     from core.agent_loop import run_turn as _run_turn
 
-    model_name = os.environ.get("AI_MODEL") or {
-        "deepseek": "deepseek-chat", "openai": "gpt-4o", "qwen": "qwen-max",
-    }.get(backend, "deepseek-chat")
-
     async def _agent_confirm(msg: str) -> bool:
         print(f"\n  [confirm] {msg}")
         resp = input("  y/N: ").strip().lower()
         return resp in ("y", "yes", "是")
 
-    def do_turn(c):
+    def do_turn(c, user_input: str = ""):
+        # 智能路由：根据用户输入选择 Worker 模型
+        client, model = pool.route(user_input)
+        backend = pool.get_backend_name(model)
+        fallback = pool.get_fallback(model)
+        print(f"  [{backend}] ", end="", flush=True)
         events = asyncio.run(_run_turn(
-            c, backend_client, model_name, reg,
+            c, client, model, reg,
             dual_model=_dual_model and _glm_client is not None,
             persona_enabled=_persona_enabled,
             confirm_handler=_agent_confirm,
+            fallback_client=fallback[0] if fallback else None,
+            fallback_model=fallback[1] if fallback else "",
         ))
         first = True
         for evt in events:
@@ -327,16 +343,13 @@ def main():
 
     # 初始图片输入
     if image_path:
-        if backend == "deepseek":
-            print("image not supported on deepseek, skipping --image")
-        else:
-            image_block = load_image(image_path)
-            if image_block:
-                conv.add_user_message([
-                    {"type": "text", "text": "请分析这张图片的内容："},
-                    image_block
-                ])
-                do_turn(conv)
+        image_block = load_image(image_path)
+        if image_block:
+            conv.add_user_message([
+                {"type": "text", "text": "请分析这张图片的内容："},
+                image_block
+            ])
+            do_turn(conv, "分析这张图片")
 
     # 主循环
     while True:
@@ -365,7 +378,7 @@ def main():
                 """)
                 continue
             elif user_input == "/clear":
-                conv = Conversation(_get_system_prompt())
+                conv = Conversation(_get_worker_prompt())
                 current_sid = conv_db.create_session()
                 print("conversation cleared, new session")
                 continue
@@ -373,7 +386,7 @@ def main():
                 print(f"{len(conv.messages)} messages ({len(conv.messages)//2} turns)")
                 continue
             elif user_input == "/backend":
-                print(f"backend: {backend}  model: {model_display}")
+                print(pool.status())
                 continue
             elif user_input == "/sessions":
                 for s in conv_db.list_sessions():
@@ -383,13 +396,13 @@ def main():
             elif user_input.startswith("/session new"):
                 name = user_input[13:].strip()
                 current_sid = conv_db.create_session(name or None)
-                conv = Conversation(_get_system_prompt())
+                conv = Conversation(_get_worker_prompt())
                 print(f"new session #{current_sid}")
                 continue
             elif user_input.startswith("/session switch"):
                 sid = int(user_input.split()[-1])
                 current_sid = sid
-                conv = Conversation(_get_system_prompt())
+                conv = Conversation(_get_worker_prompt())
                 for m in conv_db.load_messages(sid):
                     conv.messages.append({"role": m["role"], "content": m["content"]})
                 print(f"switched to #{sid} ({len(conv.messages)} msgs loaded)")
@@ -399,7 +412,7 @@ def main():
                 conv_db.delete_session(sid)
                 if current_sid == sid:
                     current_sid = conv_db.create_session()
-                    conv = Conversation(_get_system_prompt())
+                    conv = Conversation(_get_worker_prompt())
                     print(f"deleted #{sid}, new session #{current_sid}")
                 else:
                     print(f"deleted #{sid}")
@@ -418,7 +431,7 @@ def main():
                 parts = user_input.split()
                 if len(parts) > 1 and parts[1] in ("on", "off"):
                     set_persona(parts[1] == "on")
-                    conv = Conversation(_get_system_prompt())
+                    conv = Conversation(_get_worker_prompt())
                     print(f"persona {'enabled' if _persona_enabled else 'disabled'}")
                 else:
                     print(f"persona: {'on' if _persona_enabled else 'off'}  |  /persona on|off")
@@ -432,9 +445,6 @@ def main():
                         print(f"  [{s}] #{r['id']} {r['content'][:80]}")
                 continue
             elif user_input.startswith("/image"):
-                if backend == "deepseek":
-                    print("image not supported on deepseek")
-                    continue
                 parts = user_input.split(maxsplit=1)
                 if len(parts) < 2:
                     print("usage: /image <path>")
@@ -445,7 +455,7 @@ def main():
                         {"type": "text", "text": "请分析这张图片："},
                         img
                     ])
-                    do_turn(conv)
+                    do_turn(conv, "分析这张图片")
                 continue
             elif user_input.startswith("/save"):
                 parts = user_input.split(maxsplit=1)
@@ -461,13 +471,16 @@ def main():
         # 普通对话
         conv_db.save_message(current_sid, "user", user_input)
         conv.add_user_message(user_input)
-        do_turn(conv)
+        do_turn(conv, user_input)
         tk = conv.token_usage()
         print(f"\n  [{tk}t] ", end="")
-        # 保存最后一条 assistant 回复
+        # 保存最后一条 assistant 回复（含 tool_calls 元数据）
         for m in reversed(conv.messages):
             if m["role"] == "assistant" and m.get("content"):
-                conv_db.save_message(current_sid, "assistant", m["content"])
+                meta = {}
+                if m.get("tool_calls"):
+                    meta["tool_calls"] = m["tool_calls"]
+                conv_db.save_message(current_sid, "assistant", m["content"], meta if meta else None)
                 break
         conv.trim()
 

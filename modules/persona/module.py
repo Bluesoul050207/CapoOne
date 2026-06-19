@@ -26,7 +26,16 @@ class PersonaModule(BaseModule):
         get_logger().lifecycle(self.name, "destroy")
         super().on_destroy()
 
+    def build_worker_prompt(self, base: str) -> str:
+        """Worker 专用：base + 工作约束"""
+        suffix = self.db.build_worker_suffix()
+        return base + "\n" + suffix if suffix else base
+
+    def build_persona_prompt(self) -> str:
+        """Persona 专用：人设 + 行为风格 + 记忆"""
+        return self.db.build_persona_suffix()
+
     def on_build_system_prompt(self, base_prompt: str) -> str:
-        """在基础 system prompt 后面拼入规则和记忆。"""
+        """兼容旧代码：合并版"""
         suffix = self.db.build_prompt_suffix()
         return base_prompt + suffix

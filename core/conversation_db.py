@@ -34,12 +34,19 @@ class ConversationDB:
                 session_id INTEGER NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
+                metadata TEXT DEFAULT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
             );
             CREATE INDEX IF NOT EXISTS idx_msg_session ON messages(session_id, id);
         """)
         self.conn.commit()
+        # 为已有数据库补加 metadata 列（ALTER TABLE IF NOT EXISTS 的兼容写法）
+        try:
+            self.conn.execute("ALTER TABLE messages ADD COLUMN metadata TEXT DEFAULT NULL")
+            self.conn.commit()
+        except Exception:
+            pass  # 列已存在，忽略
 
     # ---- Sessions ----
 
@@ -68,22 +75,34 @@ class ConversationDB:
 
     # ---- Messages ----
 
-    def save_message(self, sid: int, role: str, content: str):
+    def save_message(self, sid: int, role: str, content: str, metadata: dict | None = None):
         # 清理非法 Unicode 代理字符
         clean = content.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
+        meta_json = json.dumps(metadata) if metadata else None
         self.conn.execute(
-            "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
-            (sid, role, clean),
+            "INSERT INTO messages (session_id, role, content, metadata) VALUES (?, ?, ?, ?)",
+            (sid, role, clean, meta_json),
         )
         self.touch_session(sid)
         self.conn.commit()
 
     def load_messages(self, sid: int, limit: int = 100) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id LIMIT ?",
+            "SELECT role, content, metadata FROM messages WHERE session_id = ? ORDER BY id LIMIT ?",
             (sid, limit),
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            msg = {"role": r["role"], "content": r["content"]}
+            if r["metadata"]:
+                try:
+                    meta = json.loads(r["metadata"])
+                    if meta:
+                        msg.update(meta)
+                except json.JSONDecodeError:
+                    pass
+            result.append(msg)
+        return result
 
     def close(self):
         self.conn.close()

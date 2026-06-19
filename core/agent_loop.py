@@ -11,31 +11,36 @@ from agent import (
     anthropic_tools_to_openai, anthropic_msgs_to_openai,
     strip_emoji, needs_confirm, _rephrase_with_persona,
 )
+from config import RECOVERY, FALLBACK_RECOVERY
 
 
 # ============================================================
-# RECOVERY 字典 — 工具失败时根据错误标签自动注入恢复指令
-# 不用 AI 自己想，直接告诉它下一步该做什么
+# POST_TOOL_HINTS — 工具成功后自动注入的"下一步"指令
+# 和 system prompt 形成双重保险：模型记得最好，忘了代码兜底
 # ============================================================
 
-RECOVERY = {
-    "low_match": (
-        "用 web_search 查这首歌的原名/英文名 → 查到后立刻调 ncm_play 播放。"
-        "只调工具不解释，不要说你找到了但不动手。"
+POST_TOOL_HINTS = {
+    # web_search 成功后必须读全文
+    "web_search": (
+        "搜到结果了。现在用 web_fetch 读最相关的 1-2 个链接全文。"
+        "不读全文不许总结回答。读完再说话。"
     ),
-    "file_not_found": (
-        "文件没找到。用 list_directory 在附近目录找 → 找到后重读。"
-        "如果还找不到就直接告诉用户文件不存在。"
+    # web_fetch 读完后可以总结了
+    "web_fetch": (
+        "读完内容了。现在总结回答用户的问题。"
+        "如果信息还不够，继续搜或读更多链接。够了就别拖。"
     ),
-    "no_matches": "没搜到结果。扩大搜索范围或缩短关键词重试。",
-    "access_denied": "权限不够。换个路径或方式再试。如果确实不行就告诉用户需要管理员权限。",
-    "unknown_tool": "这个工具不存在。用 cmd_help 看可用工具列表，选一个替代方案。",
-    "timeout": "命令超时了。简化操作或拆成小步骤再试。",
-    "not_found": "没找到目标。检查一下参数是否正确，或者换个搜索方式。",
+    # cmd_help 查完直接告诉模型该用哪个工具
+    "cmd_help": (
+        "放歌/播放/音乐相关 → 只用 ncm_play，不要用 cmd_run。"
+        "ncm_play 内部自动搜索+播放，不需要你手动搜 API。"
+    ),
 }
 
-# 当 RECOVERY 没匹配到且是连续失败时，注入这条通用反思
-FALLBACK_RECOVERY = "上一步失败了。用其他方法再试一次，换工具、换参数、换顺序都行。"
+# 绕弯路成功后提醒记经验
+EXPERIENCE_REMINDER = (
+    "这次成功了但之前绕了弯路。用 save_memory 或 save_rule 记下经验，下次直接走捷径。"
+)
 
 
 def _get_recovery(error_tag: str) -> str | None:
@@ -60,6 +65,8 @@ async def run_turn(
     dual_model: bool = False,
     persona_enabled: bool = True,
     confirm_handler=None,  # async def handler(msg: str) -> bool
+    fallback_client=None,   # 备用客户端（主模型挂了自动切）
+    fallback_model: str = "",
 ) -> list[dict]:
     """
     执行一轮对话。返回 event 列表，每个 event 是 {"type": ..., "text": ...}
@@ -76,7 +83,12 @@ async def run_turn(
         evt.update(extra)
         events.append(evt)
 
+    # 首轮发射模型标识（前端可显示"正在用 xxx 思考..."）
+    emit("model", model)
+
     prev_failure = False  # 上轮是否失败
+    active_client = client
+    active_model = model
 
     for iteration in range(6):
         if iteration == 0:
@@ -90,13 +102,27 @@ async def run_turn(
             openai_msgs = [{"role": "system", "content": sp}] + openai_msgs
 
         try:
-            response = client.chat.completions.create(
-                model=model, messages=openai_msgs,
+            response = active_client.chat.completions.create(
+                model=active_model, messages=openai_msgs,
                 tools=openai_tools, stream=True, timeout=60,
             )
         except Exception as e:
-            emit("error", f"API error: {e}")
-            return events
+            # 故障转移：主模型挂了，尝试备用
+            if fallback_client and fallback_model and active_client is not fallback_client:
+                emit("status", f"failover: {active_model} -> {fallback_model}")
+                try:
+                    active_client = fallback_client
+                    active_model = fallback_model
+                    response = active_client.chat.completions.create(
+                        model=active_model, messages=openai_msgs,
+                        tools=openai_tools, stream=True, timeout=60,
+                    )
+                except Exception as e2:
+                    emit("error", f"API error (primary + fallback): {e2}")
+                    return events
+            else:
+                emit("error", f"API error: {e}")
+                return events
 
         assistant_text = ""
         tool_calls: list[dict] = []
@@ -150,6 +176,8 @@ async def run_turn(
         tool_results = []
         had_failure = False
         error_tags: list[str] = []  # 收集所有失败的错误标签
+        ncm_fail_queries: list[str] = []   # 失败的原始 query
+        ncm_ok_queries: list[str] = []     # 成功的 query
 
         for tc in anthropic_tcs:
             name, inp = tc["name"], tc.get("input", {})
@@ -165,6 +193,16 @@ async def run_turn(
                     continue
 
             tr = registry.execute_tool(name, inp)
+
+            # 工具结果验证器：ok=True 但结果可能不对 → 自动标失败
+            if tr.ok:
+                try:
+                    valid, reason = registry.validate_tool(name, inp, tr)
+                    if not valid:
+                        tr = type(tr)(ok=False, text=tr.text, error=reason or "validation_failed")
+                except Exception:
+                    pass  # 验证本身出错不影响主流程
+
             result_text = tr.text
             if len(result_text) > 4000:
                 result_text = result_text[:4000] + "\n... (truncated)"
@@ -176,8 +214,37 @@ async def run_turn(
                 had_failure = True
                 if tr.error:
                     error_tags.append(tr.error)
+                if name == "ncm_play":
+                    ncm_fail_queries.append(inp.get("query", ""))
+            elif name == "ncm_play":
+                ncm_ok_queries.append(inp.get("query", ""))
 
         conv.messages.append({"role": "user", "content": tool_results})
+
+        # ---- ncm_play 自动记忆：仅恢复链存（失败→纠正→成功） ----
+        # 不存首次成功——模型可能理解错，污染映射
+        try:
+            from modules.persona.song_map import SongMapDB
+            sdb = SongMapDB()
+            for sq in ncm_ok_queries:
+                if sq:
+                    for fail_q in ncm_fail_queries:
+                        if fail_q and fail_q != sq:
+                            sdb.set(fail_q, sq)  # 原始失败 query → 纠正后成功 query
+        except Exception:
+            pass
+
+        # ---- 工具成功后的"下一步"注入（双重保险） ----
+        if not had_failure:
+            hints = []
+            for tc in anthropic_tcs:
+                tool_name = tc["name"]
+                if tool_name in POST_TOOL_HINTS:
+                    hint = POST_TOOL_HINTS[tool_name]
+                    if hint not in hints:
+                        hints.append(hint)
+            if hints:
+                conv.messages.append({"role": "user", "content": " ".join(hints)})
 
         # ---- 反思注入：基于错误标签的智能恢复 ----
         if had_failure:
@@ -205,7 +272,7 @@ async def run_turn(
                 # 上次失败这次成功 → 鼓励记经验
                 conv.messages.append({
                     "role": "user",
-                    "content": "这次成功了。先继续完成用户请求（播放/打开/搜索），完成后用 save_memory 或 save_rule 记下这次的经验教训。"
+                    "content": EXPERIENCE_REMINDER,
                 })
                 prev_failure = False
             elif iteration >= 3:

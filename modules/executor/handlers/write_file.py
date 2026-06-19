@@ -33,3 +33,15 @@ class WriteFileHandler(ToolHandler):
             return ToolResult.fail(f"write permission denied: {file_path}", "access_denied")
         except Exception as e:
             return ToolResult.fail(f"write failed: {e}", "write_error")
+
+    def validate(self, tool_input: dict, result: "ToolResult") -> tuple[bool, str]:
+        """验证文件确实被写入"""
+        if result.ok:
+            file_path = tool_input.get("file_path", "")
+            if file_path:
+                from pathlib import Path
+                if not Path(file_path).exists():
+                    return False, "file_not_created"
+                if Path(file_path).stat().st_size == 0:
+                    return False, "file_empty"
+        return True, ""

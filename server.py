@@ -20,8 +20,8 @@ import agent as _agent
 _agent.SERVER_MODE = True   # 服务端模式：跳过 confirm_action 的 input() 阻塞
 import agent as _ag
 from agent import (
-    detect_backend, get_client, Conversation,
-    MODEL, _init_registry, _get_system_prompt,
+    Conversation, ModelPool,
+    _init_registry, _get_worker_prompt,
     _persona_enabled, set_persona, init_dual_model, _rephrase_with_persona,
 )
 
@@ -37,15 +37,7 @@ except ImportError:
     sys.exit(1)
 
 # ---- 初始化 ----
-backend, reason = detect_backend()
-if backend == "none":
-    print("no backend available. set DEEPSEEK_API_KEY or ANTHROPIC_API_KEY")
-    sys.exit(1)
-
-backend_client = get_client(backend)
-model_display = os.environ.get("AI_MODEL") or {
-    "anthropic": MODEL, "deepseek": "deepseek-chat", "openai": "gpt-4o",
-}.get(backend, "unknown")
+pool = ModelPool()
 
 app = FastAPI()
 
@@ -55,7 +47,7 @@ sessions: dict[str, Conversation] = {}
 
 def get_or_create_conv(session_id: str) -> Conversation:
     if session_id not in sessions:
-        sessions[session_id] = Conversation(_get_system_prompt())
+        sessions[session_id] = Conversation(_get_worker_prompt())
     return sessions[session_id]
 
 
@@ -275,11 +267,16 @@ async def ws_chat(ws: WebSocket, session_id: str):
             return False
 
         try:
+            # 智能路由：根据用户输入选择 Worker 模型
+            client, model = pool.route(text)
+            fallback = pool.get_fallback(model)
             events = await _run_turn(
-                conv, backend_client, model_display, _registry,
+                conv, client, model, _registry,
                 dual_model=_dual_available and _ag._glm_client is not None,
                 persona_enabled=_persona_enabled,
                 confirm_handler=ws_confirm,
+                fallback_client=fallback[0] if fallback else None,
+                fallback_model=fallback[1] if fallback else "",
             )
 
             reply_text = ""
@@ -318,10 +315,15 @@ async def ws_chat(ws: WebSocket, session_id: str):
             print(f"  [ws] error: {e}")
             return
 
-        # 助手回复入库
+        # 助手回复入库（含 tool_calls 元数据）
         if reply_text and db_sid and cdb:
             try:
-                cdb.save_message(db_sid, "assistant", reply_text)
+                meta = {}
+                for m in reversed(conv.messages):
+                    if m["role"] == "assistant" and m.get("tool_calls"):
+                        meta["tool_calls"] = m["tool_calls"]
+                        break
+                cdb.save_message(db_sid, "assistant", reply_text, meta if meta else None)
             except Exception:
                 pass
 
@@ -374,9 +376,9 @@ if __name__ == "__main__":
 
     lan_ip = get_lan_ip()
 
-    print(f"agent  {backend} / {model_display}")
+    print(pool.status())
     if _dual_available:
-        print(f"  dual  Worker: deepseek  |  Persona: glm-4-flash")
+        print(f"  dual  Persona: glm-4-flash")
     print(f"modules {_registry.list()}")
     print(f"persona {'on' if _persona_enabled else 'off'}")
     print(f"  http://127.0.0.1:{PORT}")

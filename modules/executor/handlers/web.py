@@ -47,6 +47,14 @@ class WebSearchHandler(ToolHandler):
         except Exception as e:
             return ToolResult.fail(f"search error: {e}", "search_error")
 
+    def validate(self, tool_input: dict, result: "ToolResult") -> tuple[bool, str]:
+        """验证搜索结果不为空"""
+        if result.ok and result.text in ("", "(empty)", None):
+            return False, "empty_result"
+        if result.ok and "no results" in result.text.lower():
+            return False, "no_matches"
+        return True, ""
+
 
 class WebFetchHandler(ToolHandler):
     name = "web_fetch"

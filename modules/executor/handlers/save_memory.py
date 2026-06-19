@@ -16,6 +16,9 @@ class SaveRuleHandler(ToolHandler):
     name = "save_rule"
     description = "永久保存一条行为规则到人格系统。当用户说'以后…''每次…''记住…'时调用。"
 
+    def needs_confirm(self, tool_input: dict) -> tuple[bool, str]:
+        return True, f"save rule: {tool_input.get('content', '?')[:80]}"
+
     def input_schema(self) -> dict:
         return {
             "type": "object",
@@ -45,6 +48,9 @@ class SaveRuleHandler(ToolHandler):
 class SaveMemoryHandler(ToolHandler):
     name = "save_memory"
     description = "永久保存一条事实记忆。当用户说'记住xxx是yyy'时调用。"
+
+    def needs_confirm(self, tool_input: dict) -> tuple[bool, str]:
+        return True, f"save memory: {tool_input.get('key', '?')} = {tool_input.get('value', '?')[:60]}"
 
     def input_schema(self) -> dict:
         return {

@@ -35,6 +35,12 @@ class ToolHandler(ABC):
         """返回 (是否需要确认, 提示消息)。默认不需要。"""
         return False, ""
 
+    def validate(self, tool_input: dict, result: "ToolResult") -> tuple[bool, str]:
+        """验证工具执行结果是否真的有效。
+        返回 (valid, reason)。默认总是通过。子类覆盖以实现工具特定验证。
+        """
+        return True, ""
+
     def to_tool_def(self) -> dict:
         """转为 API 格式的工具定义。"""
         return {

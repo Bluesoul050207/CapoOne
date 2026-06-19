@@ -37,3 +37,9 @@ class ReadFileHandler(ToolHandler):
             return ToolResult.fail(f"permission denied: {file_path}", "access_denied")
         except Exception as e:
             return ToolResult.fail(f"read error: {e}", "read_error")
+
+    def validate(self, tool_input: dict, result: "ToolResult") -> tuple[bool, str]:
+        """验证读取的内容不为空"""
+        if result.ok and result.text.strip() in ("", "(empty)"):
+            return False, "empty_file"
+        return True, ""

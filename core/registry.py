@@ -93,6 +93,15 @@ class ModuleRegistry:
                 continue
         return ToolResult(ok=False, text=f"unknown tool: {tool_name}", error="unknown_tool")
 
+    def validate_tool(self, tool_name: str, tool_input: dict, result: "ToolResult") -> tuple[bool, str]:
+        """执行工具结果验证。遍历所有模块找到对应 handler 并调用 validate()。"""
+        for mod in self._modules.values():
+            if hasattr(mod, 'handlers') and tool_name in mod.handlers:
+                handler = mod.handlers[tool_name]
+                if hasattr(handler, 'validate'):
+                    return handler.validate(tool_input, result)
+        return True, ""
+
     def build_system_prompt(self, base: str) -> str:
         """依次调用每个模块的 on_build_system_prompt 钩子。"""
         prompt = base
