@@ -8,3 +8,5 @@ memory/
 *.db-journal
 agent-test/
 *.pem
+.env
+.env.local
