@@ -117,6 +117,49 @@ def del_song(key: str):
 
 
 # ============================================================
+# API: App Maps
+# ============================================================
+@app.get("/api/apps")
+def get_apps():
+    from modules.executor.handlers.app_map import load_map
+    m = load_map()
+    return [{"key": k, "value": v} for k, v in m.items()]
+
+@app.post("/api/apps")
+async def add_app(request: Request):
+    from modules.executor.handlers.app_map import _MAP_PATH, load_map
+    import json
+    data = await request.json()
+    m = load_map()
+    m[data.get("key","").strip().lower()] = data.get("value","").strip()
+    _MAP_PATH.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
+
+@app.put("/api/apps")
+async def update_app(request: Request):
+    from modules.executor.handlers.app_map import _MAP_PATH, load_map
+    import json
+    data = await request.json()
+    m = load_map()
+    old_key = data.get("old_key","").strip().lower()
+    new_key = data.get("key","").strip().lower()
+    if old_key in m:
+        del m[old_key]
+    m[new_key] = data.get("value","").strip()
+    _MAP_PATH.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
+
+@app.delete("/api/apps/{key:path}")
+def del_app(key: str):
+    from modules.executor.handlers.app_map import _MAP_PATH, load_map
+    import json
+    m = load_map()
+    m.pop(key.lower().strip(), None)
+    _MAP_PATH.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
+
+
+# ============================================================
 # HTML
 # ============================================================
 @app.get("/", response_class=HTMLResponse)
@@ -174,6 +217,7 @@ small{color:#8899aa;font-size:12px}
   <a onclick="show('profile')">Profile</a>
   <a onclick="show('memories')">Memories</a>
   <a onclick="show('songs')">Song Maps</a>
+  <a onclick="show('apps')">App Maps</a>
 </nav>
 <main>
 
@@ -239,6 +283,20 @@ small{color:#8899aa;font-size:12px}
       <button onclick="addSong()">Add</button>
     </div>
     <table id="songTable"><tr><th>Key</th><th>Value</th><th></th></tr></table>
+  </div>
+</div>
+
+<!-- App Maps -->
+<div id="apps" class="panel">
+  <h2>App Maps — 应用别名</h2>
+  <p class="muted">口语简称 → 真实路径。process_start 自动查。</p>
+  <div class="card">
+    <div class="row">
+      <input id="appKey" placeholder="你怎么叫它（如 PCL2）">
+      <input id="appVal" placeholder="完整路径（如 D:\\Games\\PCL2.exe）">
+      <button onclick="addApp()">Add</button>
+    </div>
+    <table id="appTable"><tr><th>Key</th><th>Value</th><th></th></tr></table>
   </div>
 </div>
 
@@ -346,6 +404,15 @@ async function addSong(){
 }
 async function delSong(k){await fetch('/api/songs/'+encodeURIComponent(k),{method:'DELETE'});loadSongs();}
 loadSongs();
+
+// === App Maps ===
+function appRow(a){return `<tr id="app-${escAttr(a.key)}"><td>${esc(a.key)}</td><td id="app-cell-${escAttr(a.key)}">${esc(a.value)}</td><td><button class="sm" onclick="editApp('${escAttr(a.key)}','${escAttr(a.value)}')">Edit</button> <button class="danger sm" onclick="delApp('${escAttr(a.key)}')">Del</button></td></tr>`}
+function editApp(key,value){document.getElementById('app-cell-'+escAttr(key)).innerHTML=`<input id="app-edit-${escAttr(key)}" value="${escAttr(value)}" style="width:100%"><div style="margin-top:4px"><button class="sm" onclick="saveApp('${escAttr(key)}')">Save</button> <button class="sm" onclick="loadApps()">Cancel</button></div>`}
+async function saveApp(oldKey){const v=document.getElementById('app-edit-'+escAttr(oldKey)).value;await fetch('/api/apps',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_key:oldKey,key:oldKey,value:v})});loadApps()}
+async function loadApps(){const r=await fetch('/api/apps');const d=await r.json();document.getElementById('appTable').innerHTML='<tr><th>Key</th><th>Value</th><th></th></tr>'+d.map(a=>appRow(a)).join('')}
+async function addApp(){const k=document.getElementById('appKey').value,v=document.getElementById('appVal').value;if(!k||!v)return;await fetch('/api/apps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k,value:v})});document.getElementById('appKey').value='';document.getElementById('appVal').value='';loadApps()}
+async function delApp(k){await fetch('/api/apps/'+encodeURIComponent(k),{method:'DELETE'});loadApps()}
+loadApps();
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function escAttr(s){return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;')}

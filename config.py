@@ -26,7 +26,7 @@ API_BASE_URLS = {
 MODEL_NAMES = {
     "anthropic": "claude-sonnet-4-6",
     "deepseek": "deepseek-chat",
-    "qwen": "qwen-plus",
+    "qwen": "qwen3-max",
     "openai": "gpt-4o",
     "glm": "glm-4-flash",
     "gemini": "gemini-2.0-flash",

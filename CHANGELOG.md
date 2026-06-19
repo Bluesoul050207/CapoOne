@@ -1,5 +1,39 @@
 # 更新日志
 
+## v0.7.1 — 2026-06-19（稳定性 + 安全 + 工程化完善）
+
+### 稳定性
+- ncm_play: 全函数 try/catch 崩溃保护，restart_netease 杀进程重开替代简单 kill
+- ncm_play: Validator URL 直通跳过，防误报 low_match
+- song_map: 子串匹配优先最长 key，防短 key 污染
+- _restart_netease: capture_output 静默，不污染终端输出
+- GLM 润色: max_tokens 256→512 防输出截断
+- 确认后自动截断对话历史到 4 条，防上下文污染
+
+### 安全
+- server: AUTH_TOKEN 环境变量保护 WebSocket
+- 前端: 自动从 URL 读取 token
+- 危险命令检测: 空格规范化 + 小写统一，防 `rm  -rf` 绕过
+- .gitignore 加 .env/.env.local
+
+### 新功能
+- `window_restore`: ctypes 原生 Windows API 恢复聚焦窗口
+- `app_map.json`: 应用别名映射 → process_start 自动查
+- Admin 面板新增 App Maps tab，完整 CRUD
+
+### 修复
+- process_start: 常见应用路径查找 + app_map 集成
+- ncm_play 防重复同一 query
+- ncm_play POST_TOOL_HINT: 播完问用户确认版本
+- SYSTEM_PROMPT: 用户确认词只说"嗯嗯"、上下文隔离指令
+- song_map: 写入自动去引号、ncm_play 兜底去引号
+- 删除 song_map 脏条目（真夜中纯乐队名）
+- 删除旧 persona.db 中的 MILABO 污染记忆
+- save_rule 卸掉写权限，save_memory 关键词触发
+- 模型切换: qwen-plus → qwen3-max
+
+---
+
 ## v0.7.0 — 2026-06-19（架构重构 + 工程化 + 管理面板）
 
 ### 架构重构

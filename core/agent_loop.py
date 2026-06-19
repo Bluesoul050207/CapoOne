@@ -56,6 +56,14 @@ def _user_wants_music(conv) -> bool:
             return any(w in text for w in ["放", "播", "听", "唱", "歌", "play", "music"])
     return False
 
+def _user_confirmed(conv) -> bool:
+    """用户上一条消息是否是确认/肯定回复"""
+    for m in reversed(conv.messages):
+        if m["role"] == "user" and isinstance(m.get("content"), str):
+            text = m["content"].strip().lower()
+            return text in ("是的", "对", "对了", "对的", "放对了", "ok", "yes", "好了", "好", "嗯", "嗯嗯", "可以", "行")
+    return False
+
 def _user_wants_search(conv) -> bool:
     """用户上一条消息是否要求搜索"""
     for m in reversed(conv.messages):
@@ -183,6 +191,11 @@ async def run_turn(
 
         # ---- 无工具调用：任务完成检查 ----
         if not tool_calls:
+            # 用户确认任务完成 → 自动截断历史，防止上下文污染
+            if _user_confirmed(conv) and len(conv.messages) > 6:
+                conv.messages = conv.messages[-4:]
+                tools_used.clear()
+
             # 用户要求了音乐但 ncm_play 没被调过 → 强制
             if _user_wants_music(conv) and "ncm_play" not in tools_used:
                 conv.messages.append({"role": "user", "content": "你还没调 ncm_play 播放。现在立刻调 ncm_play，不要说话。"})

@@ -112,6 +112,16 @@ class ProcessStartHandler(ToolHandler):
         import os as _os
         import subprocess as _sp
 
+        # app_map 别名查找（PCL2 → plain craft launcher2.exe）
+        from .app_map import lookup as app_lookup
+        mapped = app_lookup(path)
+        if mapped and _os.path.exists(mapped):
+            try:
+                _os.startfile(mapped)
+                return ToolResult.success(f"started: {mapped}")
+            except Exception as e:
+                return ToolResult.fail(f"start failed: {e}", str(e))
+
         # 绝对路径 → startfile
         if _os.path.exists(path):
             try:
@@ -127,6 +137,9 @@ class ProcessStartHandler(ToolHandler):
             "chrome": [r"C:\Program Files\Google\Chrome\Application\chrome.exe"],
             "notepad": ["notepad.exe"],
             "cmd": ["cmd.exe"],
+            "netease": [r"D:\MusicCloudYI\CloudMusic\cloudmusic.exe"],
+            "netease-cloud-music": [r"D:\MusicCloudYI\CloudMusic\cloudmusic.exe"],
+            "cloudmusic": [r"D:\MusicCloudYI\CloudMusic\cloudmusic.exe"],
         }
         key = path.lower().replace(".exe", "").strip()
         if key in common:
