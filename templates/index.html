@@ -58,11 +58,12 @@ header button.on{color:#fff;border-bottom:2px solid #5af}
 
 <script>
 const SESSION = Date.now().toString(36);
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
 let currentBlock = null;
 let shellCwd = '.';
 
 // ---- WebSocket ----
-const ws = new WebSocket(`ws://${location.host}/ws/${SESSION}`);
+const ws = new WebSocket(`ws://${location.host}/ws/${SESSION}?token=${TOKEN}`);
 let wsReady = false;
 
 ws.onopen = () => { wsReady = true; appendMsg('tool', 'connected'); };

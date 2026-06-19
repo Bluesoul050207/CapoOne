@@ -20,10 +20,14 @@ class RunShellHandler(ToolHandler):
         }
 
     def needs_confirm(self, tool_input: dict) -> tuple[bool, str]:
-        cmd = tool_input.get("command", "").lower()
+        cmd = tool_input.get("command", "")
+        # 规范化：去多余空格、统一小写
+        import re
+        normalized = re.sub(r'\s+', ' ', cmd).lower()
         for d in DANGEROUS_COMMANDS:
-            if d in cmd:
-                return True, f"DANGEROUS: {tool_input['command'][:80]}"
+            d_norm = re.sub(r'\s+', ' ', d).lower()
+            if d_norm in normalized:
+                return True, f"DANGEROUS: {cmd[:80]}"
         return False, ""
 
     def execute(self, tool_input: dict) -> ToolResult:

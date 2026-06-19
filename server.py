@@ -169,9 +169,16 @@ async def ping():
 
 # ---- WebSocket 双向通信 ----
 _ws_db_sessions: dict[str, int] = {}  # WebSocket session → DB session 映射
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "")  # 设了则局域网需要 token 才能连
 
 @app.websocket("/ws/{session_id}")
 async def ws_chat(ws: WebSocket, session_id: str):
+    # Token 认证：设了 AUTH_TOKEN 环境变量则必须匹配
+    token = ws.query_params.get("token", "")
+    if AUTH_TOKEN and token != AUTH_TOKEN:
+        await ws.close(code=4001, reason="unauthorized")
+        print(f"[ws] rejected: {session_id} (bad token)")
+        return
     print(f"[ws] connected: {session_id}")
     await ws.accept()
 
@@ -381,7 +388,12 @@ if __name__ == "__main__":
         print(f"  dual  Persona: glm-4-flash")
     print(f"modules {_registry.list()}")
     print(f"persona {'on' if _persona_enabled else 'off'}")
-    print(f"  http://127.0.0.1:{PORT}")
-    print(f"  http://{lan_ip}:{PORT}")
+    auth_info = ""
+    if AUTH_TOKEN:
+        auth_info = f"?token={AUTH_TOKEN}"
+    print(f"  http://127.0.0.1:{PORT}{auth_info}")
+    print(f"  http://{lan_ip}:{PORT}{auth_info}")
+    if not AUTH_TOKEN:
+        print(f"  [!] 无认证 — 局域网内任何人可连。设 $env:AUTH_TOKEN 启用保护")
     print(f"  Ctrl+C to stop")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")

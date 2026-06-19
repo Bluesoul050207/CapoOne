@@ -103,8 +103,10 @@ def needs_confirm(tool_name: str, tool_input: dict) -> tuple[bool, str]:
         return True, f"write: {tool_input.get('file_path', '?')}"
     if tool_name == "run_shell":
         cmd = tool_input.get("command", "")
+        import re
+        normalized = re.sub(r'\s+', ' ', cmd).lower()
         for d in DANGEROUS_COMMANDS:
-            if d in cmd.lower():
+            if re.sub(r'\s+', ' ', d).lower() in normalized:
                 return True, f"DANGEROUS: {cmd[:80]}"
     # save_memory 不用确认 — 人格层面可以记，Admin 面板能删
     if tool_name == "process_kill":
